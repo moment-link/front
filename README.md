@@ -1,75 +1,115 @@
-# React + TypeScript + Vite
+# Moment Link
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+행사 참가자가 QR 코드로 접속해 사진·영상을 업로드하고, 주최자가 이를 수집·관리·공유할 수 있는 웹 서비스입니다.
 
-Currently, two official plugins are available:
+## 서비스 소개
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+컨퍼런스, 세미나, 동아리 행사, 기업 행사 등에서 참가자들이 촬영한 사진과 영상을 한곳에 모으고, 행사 종료 후 공유 앨범과 결과 페이지로 다시 볼 수 있도록 돕습니다.
 
-## React Compiler
+참가자는 회원가입이나 앱 설치 없이 행사 QR 코드를 통해 접속해 사진과 영상을 업로드할 수 있습니다.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+주최자는 업로드된 사진을 관리하고, 인기 사진·Moment 카드·실시간 포토월 등을 활용하여 행사를 기록하고 공유할 수 있습니다.
 
-## Expanding the ESLint configuration
+## 주요 기능
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 참가자
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- QR 코드로 행사 업로드 페이지 접속
+- 회원가입 없이 사진·영상 업로드
+- 행사 공유 앨범 조회
+- 사진 좋아요 또는 리액션
+- 사진 저장
+- 인기 사진 순위 확인
+- 시간대별 사진 클러스터링 확인
+- 행사 결과 페이지 확인
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### 주최자
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- 행사 생성 및 QR 코드·공유 링크 발급
+- 여러 주최자에게 행사 관리 권한 부여
+- 업로드된 사진·영상 관리
+- 실시간 포토월 운영
+- Moment 카드 및 세션별 앨범 관리
+- 공유용 결과 페이지 제공
 
+## 기술 스택
+
+| 구분 | 기술 |
+| --- | --- |
+| Framework | React |
+| Build Tool | Vite |
+| Language | TypeScript |
+| Styling | styled-components |
+| Package Manager | npm |
+| Linter | ESLint |
+
+## 프로젝트 구조
+
+```text
+src/
+├── assets/                 # 이미지, 아이콘, 폰트 등 정적 리소스
+├── components/
+│   └── common/             # 공통 UI 컴포넌트
+├── pages/
+│   ├── participant/        # 참가자 화면
+│   └── host/               # 주최자 화면
+├── styles/                 # 전역 스타일 및 테마
+├── types/                  # TypeScript 타입 정의
+├── App.tsx
+└── main.tsx
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+## 실행 방법
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### 1. 저장소 Clone
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+git clone [https://github.com/moment-link/front.git](https://github.com/moment-link/front.git)
+cd front
+```
 
+### 2. 의존성 설치
+
+```bash
+npm install
+```
+
+### 3. 개발 서버 실행
+
+```bash
+npm run dev
+```
+
+실행 후 브라우저에서 아래 주소로 접속합니다.
+
+```text
+http://localhost:5173
+```
+
+## 브랜치 전략
+
+```text
+main                 # 안정된 코드 및 배포 기준 브랜치
+develop              # 기능을 통합하는 개발 브랜치
+feat/participant-*   # 참가자 기능 개발 브랜치
+feat/host-*          # 주최자 기능 개발 브랜치
+fix/*                # 버그 수정 브랜치
+```
+
+## 팀 역할
+
+| 구분 | 담당 영역 |
+| --- | --- |
+| Frontend - Participant | 참가자 사진·영상 업로드, 공유 앨범, 리액션, 결과 페이지 |
+| Frontend - Host | 행사 생성·관리, 사진 관리, 포토월, Moment 카드 관리 |
+
+## 커밋 메시지 규칙
+
+```text
+feat: 새로운 기능 추가
+fix: 버그 수정
+style: 스타일 수정
+refactor: 코드 구조 개선
+docs: 문서 수정
+chore: 설정, 패키지, 폴더 구조 등 기타 작업
 ```
