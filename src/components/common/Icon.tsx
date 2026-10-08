@@ -2,14 +2,16 @@ import React from 'react';
 import styled from 'styled-components';
 import * as PhosphorIcons from '@phosphor-icons/react';
 
-export type IconSize = 13 | 16 | 18 | 20 | 22 | 40;
+// IconSize 규격에 12를 포함한 전체 스펙 정의
+export type IconSize = 12 | 13 | 16 | 18 | 20 | 22 | 40;
 
-interface IconWrapperProps {
+// styled-components 내부에서만 사용하는 Transient Prop 타입
+interface StyledIconWrapperProps {
   $size?: IconSize;
   $color?: 'text' | 'accent' | 'text2' | 'text3';
 }
 
-const IconWrapper = styled.span<IconWrapperProps>`
+const IconWrapper = styled.span<StyledIconWrapperProps>`
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -19,7 +21,7 @@ const IconWrapper = styled.span<IconWrapperProps>`
   width: ${({ $size = 20 }) => $size}px;
   height: ${({ $size = 20 }) => $size}px;
 
-  /* 색상 규칙: 기본 텍스트 색상을 따르고, 액션/타일 등 강조 시 accent 적용 */
+  /* 색상 규칙: 기본 텍스트 색상을 따르고, 강조 시 accentLine 적용 */
   color: ${({ theme, $color = 'text' }) => {
     switch ($color) {
       case 'accent':
@@ -42,8 +44,10 @@ const IconWrapper = styled.span<IconWrapperProps>`
 // 반응 이모지 4종 스펙
 export const REACTION_EMOJIS = ['❤️', '😂', '🔥', '👏'] as const;
 
-export interface IconProps extends IconWrapperProps {
+export interface IconProps extends React.HTMLAttributes<HTMLSpanElement> {
   icon: keyof typeof PhosphorIcons;
+  $size?: IconSize;
+  $color?: 'text' | 'accent' | 'text2' | 'text3';
   weight?: 'regular' | 'fill' | 'bold';
 }
 
