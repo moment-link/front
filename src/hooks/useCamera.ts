@@ -4,10 +4,21 @@ export const useCamera = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isCameraSupported, setIsCameraSupported] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   /** 카메라 스트림 시작 */
   const startCamera = useCallback(async () => {
+    // 이미 활성화된 스트림이 있는 경우 재연결 방지
+    if (streamRef.current && streamRef.current.active) {
+      if (videoRef.current && videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+        await videoRef.current.play().catch(() => {});
+      }
+      return;
+    }
+
     try {
       setError(null);
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -20,10 +31,11 @@ export const useCamera = () => {
         audio: false,
       });
 
+      streamRef.current = mediaStream;
       setStream(mediaStream);
+
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        // 모바일 브라우저 자동 재생 보장
         await videoRef.current.play().catch(() => {});
       }
     } catch (err: any) {
@@ -33,22 +45,27 @@ export const useCamera = () => {
     }
   }, []);
 
-  /** 카메라 스트림 중단 */
+  /** 카메라 스트림 완전 중단 */
   const stopCamera = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-      setStream(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
-  }, [stream]);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setStream(null);
+  }, []);
 
-  // 컴포넌트 언마운트 시 카메라 트랙 자동으로 중단
+  // 언마운트 시 트랙 자동 중단
   useEffect(() => {
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
       }
     };
-  }, [stream]);
+  }, []);
 
   /** 프레임 캡처 (사진 촬영) */
   const captureFrame = useCallback((): Promise<File | null> => {
@@ -70,14 +87,18 @@ export const useCamera = () => {
       }
 
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          resolve(null);
-          return;
-        }
-        const capturedFile = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
-        resolve(capturedFile);
-      }, 'image/jpeg', 0.92);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(null);
+            return;
+          }
+          const capturedFile = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+          resolve(capturedFile);
+        },
+        'image/jpeg',
+        0.92
+      );
     });
   }, []);
 

@@ -1,8 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { RefObject } from 'react';
-import styled from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
 import { typography } from '../../styles/typography';
 import { Button, IconButton, Icon } from '../common';
+
+const flashAnimation = keyframes`
+  0% { opacity: 0.8; }
+  100% { opacity: 0; }
+`;
 
 const ViewfinderContainer = styled.div`
   position: relative;
@@ -14,6 +19,20 @@ const ViewfinderContainer = styled.div`
   justify-content: space-between;
   padding: 16px;
   overflow: hidden;
+`;
+
+const FlashOverlay = styled.div<{ $isFlashing: boolean }>`
+  position: absolute;
+  inset: 0;
+  background-color: #ffffff;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0;
+  ${({ $isFlashing }) =>
+    $isFlashing &&
+    css`
+      animation: ${flashAnimation} 0.25s ease-out forwards;
+    `}
 `;
 
 const VideoElement = styled.video`
@@ -28,7 +47,12 @@ const TopBar = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  z-index: 10;
+  z-index: 20;
+`;
+
+const CloseWrapper = styled.div`
+  cursor: pointer;
+  z-index: 30;
 `;
 
 const QueueBadge = styled.div`
@@ -85,7 +109,6 @@ const ShutterButton = styled.button`
 
 interface CameraViewProps {
   queueCount: number;
-  // RefObject에 HTMLVideoElement | null 타입을 허용하도록 수정하였습니다.
   videoRef?: RefObject<HTMLVideoElement | null>;
   onClose: () => void;
   onCapture: () => void;
@@ -99,28 +122,41 @@ export const CameraView: React.FC<CameraViewProps> = ({
   onCapture,
   onNext,
 }) => {
+  const [isFlashing, setIsFlashing] = useState(false);
+
+  const handleShutterClick = () => {
+    // 플래시 이펙트 트리거
+    setIsFlashing(true);
+    setTimeout(() => setIsFlashing(false), 250);
+
+    // 캡처 호출
+    onCapture();
+  };
+
   return (
     <ViewfinderContainer>
-      {/* 실시간 라이브 카메라 스트림을 노출하는 video 태그 */}
+      <FlashOverlay $isFlashing={isFlashing} />
       <VideoElement ref={videoRef} autoPlay playsInline muted />
 
       <TopBar>
-        <IconButton onClick={onClose}>
-          <Icon icon="X" $size={20} />
-        </IconButton>
+        <CloseWrapper onClick={onClose}>
+          <IconButton aria-label="카메라 닫기">
+            <Icon icon="X" $size={20} />
+          </IconButton>
+        </CloseWrapper>
         <QueueBadge>대기열 {queueCount}장</QueueBadge>
-        <IconButton>
+        <IconButton aria-label="플래시">
           <Icon icon="Lightning" $size={20} />
         </IconButton>
       </TopBar>
 
       <FrameGuide>
-        <TimestampNotice>촬영 시각이 함께 기록됩니다[cite: 1]</TimestampNotice>
+        <TimestampNotice>촬영 시각이 함께 기록됩니다</TimestampNotice>
       </FrameGuide>
 
       <Controls>
         <div style={{ width: '40px' }} />
-        <ShutterButton onClick={onCapture} />
+        <ShutterButton onClick={handleShutterClick} aria-label="촬영하기" />
         <Button $variant="primary" $size="medium" onClick={onNext}>
           다음
         </Button>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { typography } from '../../styles/typography';
 import { AppBar, Button, Icon, ProgressBar } from '../../components/common';
 import { CameraView } from '../../components/participant/CameraView';
@@ -62,6 +62,7 @@ const RemoveBtn = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
 `;
 
 const TimeLabel = styled.span`
@@ -141,7 +142,9 @@ const HeaderCountText = styled.span`
 export const PhotoUploadPage: React.FC = () => {
   const { shareKey = 'default_key' } = useParams<{ shareKey: string }>();
   const navigate = useNavigate();
-  const [isCameraMode, setIsCameraMode] = useState<boolean>(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [isCameraMode, setIsCameraMode] = useState<boolean>(searchParams.get('mode') === 'camera');
 
   const participantSessionId = localStorage.getItem('participantSessionId') || 'temp_session_123';
 
@@ -151,13 +154,26 @@ export const PhotoUploadPage: React.FC = () => {
     participantSessionId
   );
 
+  // 초기 마운트 시 쿼리 파라미터 체크 및 카메라 작동
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('mode') === 'camera') {
+    if (searchParams.get('mode') === 'camera') {
       setIsCameraMode(true);
       camera.startCamera();
     }
-  }, [camera]);
+  }, []);
+
+  // 카메라 모드 종료 및 업로드 목록 페이지로 전환
+  const handleCloseCamera = () => {
+    camera.stopCamera();
+    
+    // URL에서 mode=camera 파라미터 정돈
+    if (searchParams.get('mode') === 'camera') {
+      searchParams.delete('mode');
+      setSearchParams(searchParams, { replace: true });
+    }
+    
+    setIsCameraMode(false);
+  };
 
   const handleCapture = async () => {
     const capturedFile = await camera.captureFrame();
@@ -177,15 +193,9 @@ export const PhotoUploadPage: React.FC = () => {
       <CameraView
         queueCount={queue.length}
         videoRef={camera.videoRef}
-        onClose={() => {
-          camera.stopCamera();
-          setIsCameraMode(false);
-        }}
+        onClose={handleCloseCamera}
         onCapture={handleCapture}
-        onNext={() => {
-          camera.stopCamera();
-          setIsCameraMode(false);
-        }}
+        onNext={handleCloseCamera}
       />
     );
   }
@@ -235,7 +245,7 @@ export const PhotoUploadPage: React.FC = () => {
         {/* 주최자 승인 후 공개 정책 안내 */}
         <BottomNotice>
           <Icon icon="CheckCircle" $size={16} />
-          주최자 승인 후 공유 앨범에 공개됩니다[cite: 1].
+          주최자 승인 후 공유 앨범에 공개됩니다.
         </BottomNotice>
       </Content>
 
