@@ -51,23 +51,23 @@
 
 ## Project Structure
 
-```text
+```textgit checkout main
 src/
-├── assets/                # 이미지, 아이콘 등 정적 자원
-├── components/            # UI 컴포넌트
-│   ├── common/            # 주최자·참가자 공통 UI 컴포넌트
-│   ├── host/              # 주최자 전용 컴포넌트
-│   └── participant/       # 참가자 전용 컴포넌트 (CameraView, PhotoCard 등)
-├── hooks/                 # Custom Hooks (useCamera, useS3Upload 등)
-├── pages/                 # 라우터 페이지
-│   ├── host/              # 주최자 화면 (로그인, 행사 생성/상세, 갤러리 등)
-│   └── participant/       # 참가자 화면 (접속, 업로드, 앨범, 아카이브 등)
-├── services/              # API 통신 함수 (participantApi, uploadApi, albumApi 등)
-├── styles/                # 전역 스타일 및 테마
-├── types/                 # TypeScript 타입 정의 (participant.ts, upload.ts 등)
-├── utils/                 # 유틸리티 함수 (fileValidation 등)
-├── App.tsx                # 최상위 애플리케이션 컴포넌트 및 라우터 설정
-└── main.tsx               # 애플리케이션 진입점
+├── assets/                 # 이미지, 아이콘 등 정적 자원
+├── components/             # UI 컴포넌트
+│   ├── common/             # 주최자·참가자 공통 UI 컴포넌트 (AppBar, Button, Modal, Icon 등 20종)
+│   ├── host/               # 주최자 전용 컴포넌트
+│   └── participant/        # 참가자 전용 컴포넌트 (CameraView, PhotoDetailModal, PhotoCard 등)
+├── hooks/                  # Custom Hooks (useCamera, useS3Upload, useParticipantSession)
+├── pages/                  # 라우터 페이지
+│   ├── host/               # 주최자 화면 (로그인, 행사 생성/상세, 갤러리 등)
+│   └── participant/        # 참가자 화면 (EventJoinPage, EventAlbumPage, MomentViewPage, PhotoUploadPage 등)
+├── services/               # API 통신 함수 (participantApi, uploadApi, albumApi 등)
+├── styles/                 # 전역 스타일 및 테마 (theme.ts, typography.ts, GlobalStyle.ts)
+├── types/                  # TypeScript 타입 정의 (participant.ts, upload.ts, album.ts)
+├── utils/                  # 유틸리티 함수 (fileValidation 등)
+├── App.tsx                 # 최상위 애플리케이션 컴포넌트 및 라우터 설정
+└── main.tsx                # 애플리케이션 진입점
 ```
 
 
