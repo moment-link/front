@@ -2,6 +2,8 @@ import styled from 'styled-components';
 
 /**
  * 영역 및 컨텐츠 구분선 컴포넌트
+ * @example
+ * <Divider />
  */
 export const Divider = styled.hr`
   border: none;

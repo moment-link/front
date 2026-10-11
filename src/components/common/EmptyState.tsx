@@ -2,6 +2,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { typography } from '../../styles/typography';
 import { Icon } from './Icon';
+import type * as PhosphorIcons from '@phosphor-icons/react';
 
 const Container = styled.div`
   display: flex;
@@ -19,14 +20,26 @@ const Title = styled.p`
 `;
 
 /**
- * 데이터가 없거나 차단된 상태 안내 컴포넌트 (40px 규격 아이콘 사용)
+ * EmptyState 컴포넌트 Props 인터페이스
+ * @property message 데이터가 없을 때 표출할 안내 문구
+ * @property iconName 표시할 아이콘 이름 (기본값: 'CameraSlash')
  */
-export const EmptyState: React.FC<{ message: string; iconName?: string }> = ({
+export interface EmptyStateProps {
+  message: string;
+  iconName?: keyof typeof PhosphorIcons;
+}
+
+/**
+ * 데이터가 없거나 차단된 상태를 안내하는 플레이스홀더 컴포넌트
+ * @example
+ * <EmptyState message="등록된 사진이 없습니다." iconName="CameraSlash" />
+ */
+export const EmptyState: React.FC<EmptyStateProps> = ({
   message,
   iconName = 'CameraSlash',
 }) => (
   <Container>
-    <Icon icon={iconName as any} $size={40}$color="text3" />
+    <Icon icon={iconName} $size={40}$color="text3" />
     <Title>{message}</Title>
   </Container>
 );

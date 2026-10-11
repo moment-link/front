@@ -32,8 +32,20 @@ const StyledBadge = styled.span<{ $status: StatusType }>`
 `;
 
 /**
- * 상태 표시 전용 배지/태그 컴포넌트
+ * Badge 컴포넌트 Props 인터페이스
+ * @property status 행사 상태 종류 ('open' | 'closed' | 'pending' | 'processed')
+ * @property label 배지 내부 표출 문구
  */
-export const Badge: React.FC<{ status: StatusType; label: string }> = ({ status, label }) => (
+export interface BadgeProps {
+  status: StatusType;
+  label: string;
+}
+
+/**
+ * 상태 표시 전용 배지/태그 공통 컴포넌트
+ * @example
+ * <Badge status="open" label="진행 중" />
+ */
+export const Badge: React.FC<BadgeProps> = ({ status, label }) => (
   <StyledBadge $status={status}>{label}</StyledBadge>
 );

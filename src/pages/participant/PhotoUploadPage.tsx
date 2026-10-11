@@ -12,6 +12,8 @@ const Container = styled.div`
   flex-direction: column;
   min-height: 100vh;
   background-color: ${({ theme }) => theme.colors.bg};
+  max-width: 480px;
+  margin: 0 auto;
 `;
 
 const Content = styled.div`
@@ -56,9 +58,9 @@ const RemoveBtn = styled.button`
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background-color: rgba(21, 23, 38, 0.8);
+  background-color: ${({ theme }) => theme.colors.sunken};
   border: none;
-  color: #fff;
+  color: ${({ theme }) => theme.colors.text};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -70,7 +72,7 @@ const TimeLabel = styled.span`
   z-index: 5;
   ${typography.micro}
   color: ${({ theme }) => theme.colors.text};
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.6);
   padding: 2px 4px;
   border-radius: 4px;
   align-self: flex-start;
@@ -107,7 +109,6 @@ const InfoBox = styled.div`
 const InfoText = styled.p`
   ${typography.body}
   color: ${({ theme }) => theme.colors.text2};
-  line-height: 1.4;
 `;
 
 const BottomNotice = styled.div`
@@ -136,7 +137,7 @@ const NavIconButton = styled.button`
 
 const HeaderCountText = styled.span`
   ${typography.caption}
-  color: #b2b6ca;
+  color: ${({ theme }) => theme.colors.text2};
 `;
 
 export const PhotoUploadPage: React.FC = () => {

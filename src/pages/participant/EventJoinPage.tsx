@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
+import { typography } from '../../styles/typography';
 import { Button } from '../../components/common/Button';
 import { TextField } from '../../components/common/TextField';
 import { postJoinSession } from '../../services/participantApi';
@@ -18,11 +19,9 @@ export const EventJoinPage: React.FC = () => {
       setIsLoading(true);
       const session = await postJoinSession(shareKey, nickname);
       
-      // 로컬 스토리지에 참가자 세션 저장
       localStorage.setItem('participantSessionId', session.participantSessionId);
       localStorage.setItem('participantNickname', session.nickname);
 
-      // 공유 앨범 페이지로 이동
       navigate(`/event/${shareKey}/album`);
     } catch (error) {
       alert('세션 발급에 실패했습니다. 다시 시도해 주세요.');
@@ -60,17 +59,18 @@ const Container = styled.div`
   flex-direction: column;
   justify-content: center;
   min-height: 100vh;
+  background-color: ${({ theme }) => theme.colors.bg};
 `;
 
 const Title = styled.h1`
-  font-size: 24px;
-  font-weight: bold;
+  ${typography.title}
+  color: ${({ theme }) => theme.colors.text};
   margin-bottom: 8px;
 `;
 
 const Description = styled.p`
-  font-size: 14px;
-  color: #666;
+  ${typography.body}
+  color: ${({ theme }) => theme.colors.text2};
   margin-bottom: 32px;
 `;
 

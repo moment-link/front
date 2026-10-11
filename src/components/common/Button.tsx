@@ -4,12 +4,12 @@ import { typography } from '../../styles/typography';
 
 /**
  * Button 컴포넌트 Props 인터페이스
- * @property $variant - 버튼 스타일 종류 ('primary': 주요 채우기, 'secondary': 외곽선, 'ghost': 투명)
- * @property $size - 버튼 높이 및 패딩 크기 ('medium': 36px, 'large': 44px - 최소 터치 영역)
+ * @property $variant 버튼 스타일 종류 ('primary': 주요 채우기, 'secondary': 외곽선, 'ghost': 투명)
+ * @property $size 버튼 높이 및 패딩 크기 ('medium': 36px, 'large': 44px - 최소 터치 영역)
  */
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   $variant?: 'primary' | 'secondary' | 'ghost';
-  $size?: 'medium' | 'large';
+  $size?: 'small' | 'medium' | 'large';
 }
 
 const StyledButton = styled.button<ButtonProps>`
@@ -18,7 +18,6 @@ const StyledButton = styled.button<ButtonProps>`
   justify-content: center;
   gap: 8px;
   border-radius: 8px;
-  font-weight: 500;
   transition: opacity 0.2s ease, background-color 0.2s ease;
 
   /* 크기 세팅: 36px / 44px (Figma 터치 영역 스펙 반영) */
@@ -40,12 +39,12 @@ const StyledButton = styled.button<ButtonProps>`
     switch ($variant) {
       case 'primary':
         return css`
-          background-color: ${theme.colors.primary}; /* #1B2CC1 */
+          background-color: ${theme.colors.primary};
           color: ${theme.colors.text};
         `;
       case 'secondary':
         return css`
-          background-color: ${theme.colors.surface}; /* #232532 */
+          background-color: ${theme.colors.surface};
           color: ${theme.colors.text};
           border: 1px solid ${theme.colors.border};
         `;
@@ -64,9 +63,17 @@ const StyledButton = styled.button<ButtonProps>`
 `;
 
 /**
- * 공통 버튼 컴포넌트
+ * 서비스 공통 버튼 컴포넌트
+ * @example
+ * <Button $variant="primary" $size="large" onClick={handleClick}>
+ *   참여 시작하기
+ * </Button>
  */
-export const Button: React.FC<ButtonProps> = ({ children, $variant = 'primary',$size = 'large', ...props }) => (
+export const Button: React.FC<ButtonProps> = ({
+  children,
+  $variant = 'primary',$size = 'large',
+  ...props
+}) => (
   <StyledButton $variant={$variant} $size={$size} {...props}>
     {children}
   </StyledButton>

@@ -10,7 +10,6 @@ const Container = styled.div<{ $isError?: boolean }>`
   padding: 12px 20px;
   border-radius: 8px;
   background-color: ${({ theme }) => theme.colors.surface};
-  /* 에러 상태 시 accent-300 색상 적용 규칙 */
   border: 1px solid ${({ $isError, theme }) => ($isError ? theme.feedback.errorMessage : theme.colors.accentLine)};
   color: ${({ $isError, theme }) => ($isError ? theme.feedback.errorMessage : theme.colors.text)};
   ${typography.body}
@@ -19,8 +18,20 @@ const Container = styled.div<{ $isError?: boolean }>`
 `;
 
 /**
- * 피드백 및 완료/에러 안내 토스트 메시지 컴포넌트
+ * Toast 컴포넌트 Props 인터페이스
+ * @property message 알림 문구
+ * @property isError 에러 알림 여부 (true 시 에러 피드백 컬러 적용)
  */
-export const Toast: React.FC<{ message: string; isError?: boolean }> = ({ message, isError }) => (
+export interface ToastProps {
+  message: string;
+  isError?: boolean;
+}
+
+/**
+ * 처리 완료 및 에러 상태 안내 팝업 토스트 컴포넌트
+ * @example
+ * <Toast message="사진이 성공적으로 업로드되었습니다." />
+ */
+export const Toast: React.FC<ToastProps> = ({ message, isError }) => (
   <Container $isError={isError}>{message}</Container>
 );

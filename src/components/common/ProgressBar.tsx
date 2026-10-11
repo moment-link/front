@@ -17,9 +17,19 @@ const Fill = styled.div<{ $progress: number }>`
 `;
 
 /**
- * 업로드 진행률 바 컴포넌트 (0 ~ 100%)
+ * ProgressBar 컴포넌트 Props 인터페이스
+ * @property progress 진행률 퍼센트 수치 (0 ~ 100)
  */
-export const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
+export interface ProgressBarProps {
+  progress: number;
+}
+
+/**
+ * 사진 및 미디어 업로드 진행 상태 표시바 컴포넌트
+ * @example
+ * <ProgressBar progress={75} />
+ */
+export const ProgressBar: React.FC<ProgressBarProps> = ({ progress }) => (
   <Track>
     <Fill $progress={Math.min(100, Math.max(0, progress))} />
   </Track>

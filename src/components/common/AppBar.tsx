@@ -20,17 +20,41 @@ const Title = styled.h1`
   color: ${({ theme }) => theme.colors.text};
 `;
 
+const ActionSlot = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+`;
+
 /**
- * 상단 네비게이션 헤더(App bar) 컴포넌트
+ * AppBar 컴포넌트 Props 인터페이스
+ * @property title 헤더 중앙에 표시될 페이지 타이틀
+ * @property leftAction 헤더 좌측에 들어갈 영역 (예: 뒤로가기 IconButton)
+ * @property rightAction 헤더 우측에 들어갈 영역 (예: 설정/닫기 IconButton)
  */
-export const AppBar: React.FC<{ title: string; leftAction?: React.ReactNode; rightAction?: React.ReactNode }> = ({
+export interface AppBarProps {
+  title: string;
+  leftAction?: React.ReactNode;
+  rightAction?: React.ReactNode;
+}
+
+/**
+ * 상단 네비게이션 헤더(App bar) 공통 컴포넌트
+ * @example
+ * <AppBar
+ *   title="공유 앨범"
+ *   leftAction={<IconButton onClick={handleBack}><Icon icon="CaretLeft" /></IconButton>}
+ * />
+ */
+export const AppBar: React.FC<AppBarProps> = ({
   title,
   leftAction,
   rightAction,
 }) => (
   <Header>
-    <div>{leftAction}</div>
+    <ActionSlot>{leftAction}</ActionSlot>
     <Title>{title}</Title>
-    <div>{rightAction}</div>
+    <ActionSlot>{rightAction}</ActionSlot>
   </Header>
 );

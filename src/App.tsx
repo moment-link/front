@@ -1,38 +1,42 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from 'styled-components';
 import { theme } from './styles/theme';
 import { GlobalStyle } from './styles/GlobalStyle';
 
-// 참가자 파트 페이지 모듈 import
 import { EventJoinPage } from './pages/participant/EventJoinPage';
 import { EventAlbumPage } from './pages/participant/EventAlbumPage';
 import { PhotoUploadPage } from './pages/participant/PhotoUploadPage';
+import { MomentViewPage } from './pages/participant/MomentViewPage';
 
-function App() {
+export const App: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
       <GlobalStyle />
-      <BrowserRouter>
+      <Router>
         <Routes>
-          {/* 1. 기본 루트 접속 시 데모 참가 페이지로 자동 이동 */}
+          {/* 기본 루트 진입 시 시연용 이벤트 입장 페이지로 리다이렉트 */}
           <Route path="/" element={<Navigate to="/event/demo-event/join" replace />} />
 
-          {/* 2. QR 접속 및 세션 발급 페이지 (P-01) */}
+          {/* P-01. 참가자 행사 입장 (QR/공유링크 진입) */}
           <Route path="/event/:shareKey/join" element={<EventJoinPage />} />
 
-          {/* 3. 공유 앨범 메인 페이지 (P-02) */}
+          {/* P-02. 공유 앨범 메인 뷰 */}
           <Route path="/event/:shareKey/album" element={<EventAlbumPage />} />
 
-          {/* 4. 웹 카메라 및 S3 Direct 업로드 페이지 (P-03/P-04) */}
+          {/* P-05. Moment 카드 타임라인 뷰 */}
+          <Route path="/event/:shareKey/moments" element={<MomentViewPage />} />
+
+          {/* P-03 / P-04. 업로드 및 카메라 촬영 페이지 */}
           <Route path="/upload" element={<PhotoUploadPage />} />
           <Route path="/event/:shareKey/upload" element={<PhotoUploadPage />} />
 
-          {/* 5. 예외 경로 처리: 잘못된 접근 시 메인으로 이동 */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* 와일드카드 처리 */}
+          <Route path="*" element={<Navigate to="/event/demo-event/join" replace />} />
         </Routes>
-      </BrowserRouter>
+      </Router>
     </ThemeProvider>
   );
-}
+};
 
 export default App;

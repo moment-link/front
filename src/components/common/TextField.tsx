@@ -29,14 +29,25 @@ const Input = styled.input`
   }
 
   &:focus {
-    border-color: ${({ theme }) => theme.colors.accentLine}; /* #6a91ff 포커스 링 */
+    outline: none;
+    border-color: ${({ theme }) => theme.colors.accentLine};
   }
 `;
 
 /**
- * 텍스트 입력 필드 컴포넌트
+ * TextField 컴포넌트 Props 인터페이스
+ * @property label 필드 상단 라벨 문구
  */
-export const TextField: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { label?: string }> = ({ label, ...props }) => (
+export interface TextFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label?: string;
+}
+
+/**
+ * 표준 텍스트 입력 필드 컴포넌트
+ * @example
+ * <TextField label="닉네임" placeholder="닉네임을 입력하세요" value={nick} onChange={e => setNick(e.target.value)} />
+ */
+export const TextField: React.FC<TextFieldProps> = ({ label, ...props }) => (
   <Container>
     {label && <Label>{label}</Label>}
     <Input {...props} />

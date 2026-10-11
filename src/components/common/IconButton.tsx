@@ -8,6 +8,7 @@ const StyledIconButton = styled.button`
   width: 40px;
   height: 40px;
   border-radius: 50%;
+  background-color: transparent;
   transition: background-color 0.2s ease;
 
   &:hover {
@@ -16,8 +17,13 @@ const StyledIconButton = styled.button`
 `;
 
 /**
- * 아이콘 전용 단일 터치 버튼 컴포넌트
+ * 아이콘 전용 단일 원형 터치 버튼 컴포넌트 (40x40px 최소 터치 영역 확보)
+ * @example
+ * <IconButton onClick={handleClose} aria-label="닫기">
+ *   <Icon icon="X" $size={20} />
+ * </IconButton>
  */
-export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({ children, ...props }) => (
-  <StyledIconButton {...props}>{children}</StyledIconButton>
-);
+export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({
+  children,
+  ...props
+}) => <StyledIconButton {...props}>{children}</StyledIconButton>;

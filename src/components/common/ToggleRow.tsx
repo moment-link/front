@@ -27,13 +27,14 @@ const SubText = styled.span`
   color: ${({ theme }) => theme.colors.text3};
 `;
 
-/* 46x28 스위치 스타일 */
 const Switch = styled.button<{ $checked: boolean }>`
   width: 46px;
   height: 28px;
   border-radius: 14px;
-  background-color: ${({ $checked, theme }) => ($checked ? theme.colors.accentBadge : theme.palette.neutral[800])};
+  background-color: ${({ $checked, theme }) => ($checked ? theme.colors.accentBadge : theme.colors.sunken)};
   position: relative;
+  border: none;
+  cursor: pointer;
   transition: background-color 0.2s ease;
 
   &::after {
@@ -50,9 +51,30 @@ const Switch = styled.button<{ $checked: boolean }>`
 `;
 
 /**
- * 설정 옵션 토글 스위치 행 컴포넌트 (참가자 다운로드 허용 설정 등)
+ * ToggleRow 컴포넌트 Props 인터페이스
+ * @property label 설정 항목 제목
+ * @property subText 하단 서브 설명문
+ * @property checked 토글 활성화 여부
+ * @property onChange 토글 변경 핸들러 함수
  */
-export const ToggleRow: React.FC<{ label: string; subText?: string; checked: boolean; onChange: (val: boolean) => void }> = ({
+export interface ToggleRowProps {
+  label: string;
+  subText?: string;
+  checked: boolean;
+  onChange: (val: boolean) => void;
+}
+
+/**
+ * 설정 옵션 토글 행 컴포넌트 (사진 다운로드 허용 토글 등)
+ * @example
+ * <ToggleRow
+ *   label="사진 다운로드 허용"
+ *   subText="참가자가 사진을 저장할 수 있습니다."
+ *   checked={allowDownload}
+ *   onChange={setAllowDownload}
+ * />
+ */
+export const ToggleRow: React.FC<ToggleRowProps> = ({
   label,
   subText,
   checked,

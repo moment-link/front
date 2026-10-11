@@ -2,10 +2,9 @@ import React from 'react';
 import styled from 'styled-components';
 import * as PhosphorIcons from '@phosphor-icons/react';
 
-// IconSize 규격에 12를 포함한 전체 스펙 정의
+/** Figma 아이콘 크기 규격 타입 */
 export type IconSize = 12 | 13 | 16 | 18 | 20 | 22 | 40;
 
-// styled-components 내부에서만 사용하는 Transient Prop 타입
 interface StyledIconWrapperProps {
   $size?: IconSize;
   $color?: 'text' | 'accent' | 'text2' | 'text3';
@@ -16,22 +15,20 @@ const IconWrapper = styled.span<StyledIconWrapperProps>`
   align-items: center;
   justify-content: center;
 
-  /* 크기 설정 (기본값 20px) */
   font-size: ${({ $size = 20 }) => $size}px;
   width: ${({ $size = 20 }) => $size}px;
   height: ${({ $size = 20 }) => $size}px;
 
-  /* 색상 규칙: 기본 텍스트 색상을 따르고, 강조 시 accentLine 적용 */
   color: ${({ theme, $color = 'text' }) => {
     switch ($color) {
       case 'accent':
-        return theme.colors.accentLine; // #6a91ff
+        return theme.colors.accentLine;
       case 'text2':
         return theme.colors.text2;
       case 'text3':
         return theme.colors.text3;
       default:
-        return theme.colors.text; // #e9e9ed
+        return theme.colors.text;
     }
   }};
 
@@ -41,9 +38,16 @@ const IconWrapper = styled.span<StyledIconWrapperProps>`
   }
 `;
 
-// 반응 이모지 4종 스펙
+/** 반응 이모지 4종 규격 */
 export const REACTION_EMOJIS = ['❤️', '😂', '🔥', '👏'] as const;
 
+/**
+ * Icon 컴포넌트 Props 인터페이스
+ * @property icon PhosphorIcons 아이콘 이름
+ * @property $size 아이콘 크기 (12, 13, 16, 18, 20, 22, 40)
+ * @property $color 색상 토큰
+ * @property weight 아이콘 굵기 ('regular' | 'fill' | 'bold')
+ */
 export interface IconProps extends React.HTMLAttributes<HTMLSpanElement> {
   icon: keyof typeof PhosphorIcons;
   $size?: IconSize;
@@ -51,6 +55,11 @@ export interface IconProps extends React.HTMLAttributes<HTMLSpanElement> {
   weight?: 'regular' | 'fill' | 'bold';
 }
 
+/**
+ * PhosphorIcons 기반 전역 공통 아이콘 컴포넌트
+ * @example
+ * <Icon icon="CaretLeft" $size={20}$color="text" />
+ */
 export const Icon: React.FC<IconProps> = ({
   icon,
   $size = 20,$color = 'text',

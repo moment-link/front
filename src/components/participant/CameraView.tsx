@@ -13,7 +13,7 @@ const ViewfinderContainer = styled.div`
   position: relative;
   width: 100%;
   height: 100vh;
-  background-color: #000;
+  background-color: ${({ theme }) => theme.colors.bg};
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -58,7 +58,7 @@ const CloseWrapper = styled.div`
 const QueueBadge = styled.div`
   padding: 6px 16px;
   border-radius: 20px;
-  background-color: rgba(21, 23, 38, 0.7);
+  background-color: ${({ theme }) => theme.colors.sunken || 'rgba(21, 23, 38, 0.7)'};
   color: ${({ theme }) => theme.colors.text};
   ${typography.label}
 `;
@@ -67,7 +67,7 @@ const FrameGuide = styled.div`
   position: absolute;
   inset: 70px 16px 120px 16px;
   border-radius: 24px;
-  border: 1px solid rgba(233, 233, 237, 0.2);
+  border: 1px solid ${({ theme }) => theme.colors.border};
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -92,7 +92,7 @@ const ShutterButton = styled.button`
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  border: 4px solid #e4e7f5;
+  border: 4px solid ${({ theme }) => theme.colors.border};
   background-color: transparent;
   padding: 4px;
   cursor: pointer;
@@ -103,7 +103,7 @@ const ShutterButton = styled.button`
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background-color: #e4e7f5;
+    background-color: ${({ theme }) => theme.colors.border};
   }
 `;
 
@@ -125,11 +125,8 @@ export const CameraView: React.FC<CameraViewProps> = ({
   const [isFlashing, setIsFlashing] = useState(false);
 
   const handleShutterClick = () => {
-    // 플래시 이펙트 트리거
     setIsFlashing(true);
     setTimeout(() => setIsFlashing(false), 250);
-
-    // 캡처 호출
     onCapture();
   };
 

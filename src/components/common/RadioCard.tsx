@@ -23,9 +23,25 @@ const Sub = styled.p`
 `;
 
 /**
- * 라디오 카드 형태의 선택형 옵션 컴포넌트 (Moment 세션/장소 선택 등)
+ * RadioCard 컴포넌트 Props 인터페이스
+ * @property title 카드 제목
+ * @property subText 하단 서브 설명 문구
+ * @property selected 선택 상태 여부
+ * @property onClick 선택 클릭 이벤트
  */
-export const RadioCard: React.FC<{ title: string; subText?: string; selected: boolean; onClick: () => void }> = ({
+export interface RadioCardProps {
+  title: string;
+  subText?: string;
+  selected: boolean;
+  onClick: () => void;
+}
+
+/**
+ * 라디오 형태의 카드 선택 옵션 컴포넌트 (Moment 세션/장소 선택 등)
+ * @example
+ * <RadioCard title="메인 홀" subText="10:00 - 12:00" selected={true} onClick={handleSelect} />
+ */
+export const RadioCard: React.FC<RadioCardProps> = ({
   title,
   subText,
   selected,

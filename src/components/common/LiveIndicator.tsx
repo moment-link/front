@@ -18,6 +18,8 @@ const Dot = styled.span`
 `;
 
 /**
- * 실시간 포토월/현황 표시용 Glow 원형 점 컴포넌트
+ * 실시간 포토월 및 현황 라이브 상태를 나타내는 Glow 원형 점 컴포넌트
+ * @example
+ * <LiveIndicator />
  */
 export const LiveIndicator: React.FC = () => <Dot />;
