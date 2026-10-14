@@ -1,6 +1,8 @@
+// src/services/api.ts
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.momentlink.org';
+// 💡 프록시 설정을 위해 BASE_URL을 빈 문자열(상대 경로)로 변경합니다.
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -8,20 +10,9 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // 세션 쿠키 전달을 위한 설정
+  withCredentials: true, // participant_token 쿠키 전송을 위한 설정
 });
 
-// 요청 인터셉터 (필요 시 세션 키 및 공통 헤더 추가)
-api.interceptors.request.use(
-  (config) => {
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-// 응답 인터셉터 (공통 에러 핸들링)
 api.interceptors.response.use(
   (response) => response,
   (error) => {

@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import styled from 'styled-components';
 import { typography } from '../../styles/typography';
 import { IconButton, Icon, Button } from '../common';
-import type { AlbumPhoto } from '../../services/participantApi';
+import type { AlbumPhoto } from '../../types/participant';
 
 interface PhotoDetailModalProps {
   photo: AlbumPhoto | null;
   allowDownload?: boolean; // 주최자 다운로드 허용 정책
   onClose: () => void;
-  onReactionToggle?: (photoId: string, emoji: string) => void;
+  onReactionToggle?: (photoId: string | number, emoji: string) => void;
 }
 
 export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
@@ -70,7 +70,7 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
     }
     const link = document.createElement('a');
     link.href = photo.url;
-    link.download = `moment_${photo.id}.jpg`;
+    link.download = `moment_${String(photo.id)}.jpg`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
