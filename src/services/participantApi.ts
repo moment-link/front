@@ -1,79 +1,75 @@
-export interface ParticipantSession {
-  participantSessionId: string;
-  shareKey: string;
-  nickname: string;
-}
+/**
+ * @file participantApi.ts
+ * @description MomentLink 참가자 파트 백엔드 API 연동 서비스
+ */
 
-export interface AlbumPhoto {
-  id: string;
-  url: string;
-  uploaderName: string;
-  capturedAt: string;
-  reactions: {
-    heart: number;
-    laugh: number;
-    fire: number;
-    clap: number;
-  };
-  isApproved: boolean;
-  isPopular?: boolean;
-}
+import { api } from './api';
+import type { PublicEventInfo, ParticipantSession, AlbumPhoto } from '../types/participant';
 
-// 1. 참가자 세션 발급 Mock API
-export const postJoinSession = async (
-  shareKey: string,
-  inputNickname?: string
-): Promise<ParticipantSession> => {
-  await new Promise((resolve) => setTimeout(resolve, 300));
+export type { PublicEventInfo, ParticipantSession, AlbumPhoto };
 
-  const nickname = inputNickname?.trim() || `참가자_${Math.floor(1000 + Math.random() * 9000)}`;
-  const participantSessionId = `sess_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-
-  return {
-    participantSessionId,
-    shareKey,
-    nickname,
-  };
-};
-
-// 2. 공유 앨범 사진 목록 조회 Mock API
-export const getAlbumPhotos = async (
-  shareKey: string,
-  sort: 'latest' | 'popular' = 'latest'
-): Promise<AlbumPhoto[]> => {
-  await new Promise((resolve) => setTimeout(resolve, 300));
-
-  // shareKey 읽기 처리 (경고 해결)
-  console.log(`[Mock API] Fetching album photos for event: ${shareKey}`);
-
-  const mockPhotos: AlbumPhoto[] = [
-    {
-      id: 'photo_1',
-      url: 'https://picsum.photos/400/400?random=1',
-      uploaderName: '즐거운포토',
-      capturedAt: new Date(Date.now() - 3600000).toISOString(),
-      reactions: { heart: 12, laugh: 3, fire: 8, clap: 5 },
-      isApproved: true,
-      isPopular: true,
-    },
-    {
-      id: 'photo_2',
-      url: 'https://picsum.photos/400/400?random=2',
-      uploaderName: '익명',
-      capturedAt: new Date(Date.now() - 7200000).toISOString(),
-      reactions: { heart: 4, laugh: 1, fire: 2, clap: 0 },
-      isApproved: true,
-      isPopular: false,
-    },
-  ];
-
-  if (sort === 'popular') {
-    return [...mockPhotos].sort((a, b) => {
-      const sumA = Object.values(a.reactions).reduce((acc, cur) => acc + cur, 0);
-      const sumB = Object.values(b.reactions).reduce((acc, cur) => acc + cur, 0);
-      return sumB - sumA;
-    });
+/**
+ * [P-01] 공유 키(accessKey)를 이용해 공개 행사의 기본 정보를 조회합니다.
+ */
+export const getPublicEventInfo = async (shareKey: string): Promise<PublicEventInfo> => {
+  if (!shareKey) {
+    throw new Error('유효한 공유 키가 요구됩니다.');
   }
 
-  return mockPhotos;
+  const cleanKey = shareKey.trim();
+  const response = await api.get('/api/v1/events/access', {
+    headers: {
+      'X-Event-Access-Key': cleanKey,
+    },
+  });
+  return response.data.data;
+};
+
+/**
+ * [P-02] 참가자 세션을 발급받고 브라우저 쿠키(participant_token)를 생성합니다.
+ */
+export const postJoinSession = async (
+  eventId: number,
+  shareKey: string
+): Promise<ParticipantSession> => {
+  const cleanKey = shareKey.trim();
+  const response = await api.post(
+    `/api/v1/participant/${eventId}/session`,
+    {},
+    {
+      headers: {
+        'X-Event-Access-Key': cleanKey,
+      },
+    }
+  );
+  return response.data;
+};
+
+/**
+ * [P-03] 공유 앨범 피드의 사진 목록을 조회합니다. (participant_token 쿠키 자동 전송)
+ */
+export const getAlbumPhotos = async (
+  eventId: number,
+  sort: 'latest' | 'popular' = 'latest'
+): Promise<AlbumPhoto[]> => {
+  const response = await api.get(`/api/v1/participant/${eventId}/media`, {
+    params: { sort: sort.toUpperCase() },
+  });
+  return response.data.data;
+};
+
+/**
+ * [P-04] 특정 사진에 이모지 반응(좋아요)을 등록합니다.
+ */
+export const addPhotoReaction = async (eventId: number, mediaId: number | string) => {
+  const response = await api.put(`/api/v1/participant/${eventId}/media/${mediaId}/like`);
+  return response.data;
+};
+
+/**
+ * [P-05] 특정 사진의 이모지 반응(좋아요)을 취소합니다.
+ */
+export const removePhotoReaction = async (eventId: number, mediaId: number | string) => {
+  const response = await api.delete(`/api/v1/participant/${eventId}/media/${mediaId}/like`);
+  return response.data;
 };

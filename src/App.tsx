@@ -16,23 +16,23 @@ export const App: React.FC = () => {
       <Router>
         <Routes>
           {/* 기본 루트 진입 시 시연용 이벤트 입장 페이지로 리다이렉트 */}
-          <Route path="/" element={<Navigate to="/event/demo-event/join" replace />} />
+          <Route path="/" element={<Navigate to="/event/fkYi8kQ8T53UzB7X7TLQKsUohTktW9gKSJxhrKHIm-E/join" replace />} />
 
-          {/* P-01. 참가자 행사 입장 (QR/공유링크 진입) */}
+          {/* P-01. 참가자 행사 입장 (QR/공유링크 진입 - accessKey 사용) */}
           <Route path="/event/:shareKey/join" element={<EventJoinPage />} />
 
-          {/* P-02. 공유 앨범 메인 뷰 */}
-          <Route path="/event/:shareKey/album" element={<EventAlbumPage />} />
+          {/* P-02. 공유 앨범 메인 뷰 (eventId 기반 접근) */}
+          <Route path="/event/:eventId/album" element={<EventAlbumPage />} />
 
-          {/* P-05. Moment 카드 타임라인 뷰 */}
-          <Route path="/event/:shareKey/moments" element={<MomentViewPage />} />
+          {/* P-05. Moment 카드 타임라인 뷰 (eventId 기반 접근) */}
+          <Route path="/event/:eventId/moments" element={<MomentViewPage />} />
 
           {/* P-03 / P-04. 업로드 및 카메라 촬영 페이지 */}
           <Route path="/upload" element={<PhotoUploadPage />} />
-          <Route path="/event/:shareKey/upload" element={<PhotoUploadPage />} />
+          <Route path="/event/:eventId/upload" element={<PhotoUploadPage />} />
 
           {/* 와일드카드 처리 */}
-          <Route path="*" element={<Navigate to="/event/demo-event/join" replace />} />
+          <Route path="*" element={<Navigate to="/event/fkYi8kQ8T53UzB7X7TLQKsUohTktW9gKSJxhrKHIm-E/join" replace />} />
         </Routes>
       </Router>
     </ThemeProvider>

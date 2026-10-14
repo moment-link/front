@@ -1,136 +1,150 @@
+/**
+ * @file EventAlbumPage.tsx
+ * @description 참가자 공유 앨범 갤러리 피드 페이지 (예외 및 무한 로딩 방지)
+ */
+
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import styled from 'styled-components';
-import { typography } from '../../styles/typography';
-import { Button } from '../../components/common/Button';
-import { SegmentedTab } from '../../components/common/SegmentedTab';
+import {
+  getAlbumPhotos,
+  addPhotoReaction,
+} from '../../services/participantApi';
+import type { AlbumPhoto } from '../../types/participant';
+import { PhotoCard } from '../../components/participant/PhotoCard';
 import { PhotoDetailModal } from '../../components/participant/PhotoDetailModal';
-import { getAlbumPhotos } from '../../services/participantApi';
-import type { AlbumPhoto } from '../../services/participantApi';
+import { typography } from '../../styles/typography';
 
 export const EventAlbumPage: React.FC = () => {
-  const navigate = useNavigate();
-  const { shareKey = 'demo-event' } = useParams<{ shareKey: string }>();
-
+  const { eventId } = useParams<{ eventId: string }>();
   const [photos, setPhotos] = useState<AlbumPhoto[]>([]);
-  const [sort, setSort] = useState<'latest' | 'popular'>('latest');
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<AlbumPhoto | null>(null);
 
+  // 1. 앨범 사진 목록 로드
   useEffect(() => {
-    getAlbumPhotos(shareKey, sort).then(setPhotos);
-  }, [shareKey, sort]);
+    console.log('[EventAlbumPage 진입] eventId:', eventId);
+
+    if (!eventId || isNaN(Number(eventId))) {
+      console.error('유효하지 않은 eventId입니다:', eventId);
+      setErrorMsg('유효하지 않은 행사 ID입니다.');
+      setLoading(false);
+      return;
+    }
+
+    const fetchPhotos = async () => {
+      setLoading(true);
+      setErrorMsg(null);
+
+      try {
+        const data = await getAlbumPhotos(Number(eventId), 'latest');
+        console.log('[앨범 사진 목록 수신 성공]:', data);
+        setPhotos(data || []);
+      } catch (err: any) {
+        console.error('[앨범 사진 로드 실패]:', err);
+        setErrorMsg(
+          err.response?.data?.message || '사진 목록을 불러오는 중 오류가 발생했습니다.'
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPhotos();
+  }, [eventId]);
+
+  // 2. 이모지 반응 토글 핸들러
+  const handleReactionToggle = async (photoId: string | number, emojiKey: string) => {
+    if (!eventId) return;
+
+    try {
+      const targetPhoto = photos.find((p) => String(p.id) === String(photoId));
+      if (!targetPhoto) return;
+
+      await addPhotoReaction(Number(eventId), photoId);
+
+      setPhotos((prevPhotos) =>
+        prevPhotos.map((p) => {
+          if (String(p.id) === String(photoId)) {
+            const currentCount = p.reactions?.[emojiKey as keyof typeof p.reactions] || 0;
+            return {
+              ...p,
+              reactions: {
+                ...p.reactions,
+                [emojiKey]: currentCount + 1,
+              },
+            };
+          }
+          return p;
+        })
+      );
+    } catch (error) {
+      console.error('이모지 반응 처리 실패:', error);
+    }
+  };
 
   return (
-    <Container>
-      <Header>
-        <TitleGroup>
-          <PageTitle>공유 앨범</PageTitle>
-          <Button
-            $variant="secondary"
-            $size="medium"
-            onClick={() => navigate(`/event/${shareKey}/moments`)}
-          >
-            Moment 카드 ›
-          </Button>
-        </TitleGroup>
+    <PageContainer>
+      <PageTitle>공유 앨범 갤러리</PageTitle>
 
-        <ButtonGroup>
-          <Button onClick={() => navigate('/upload')}>+ 업로드</Button>
-          <Button onClick={() => navigate('/upload?mode=camera')}>📷 촬영</Button>
-        </ButtonGroup>
-      </Header>
+      {/* 로딩 및 상태 표시 */}
+      {loading ? (
+        <MessageState>사진을 불러오는 중입니다...</MessageState>
+      ) : errorMsg ? (
+        <MessageState style={{ color: '#ef4444' }}>{errorMsg}</MessageState>
+      ) : photos.length === 0 ? (
+        <MessageState>
+          아직 등록된 사진이 없습니다.
+          <br />첫 번째 순간을 기록해 보세요!
+        </MessageState>
+      ) : (
+        <PhotoGrid>
+          {photos.map((photo) => (
+            <PhotoCard
+              key={photo.id}
+              photo={photo}
+              onClick={() => setSelectedPhoto(photo)}
+            />
+          ))}
+        </PhotoGrid>
+      )}
 
-      {/* SegmentedTab 규격 적용 */}
-      <SegmentedTab
-        options={[
-          { key: 'latest', label: '최신순' },
-          { key: 'popular', label: '인기순' },
-        ]}
-        activeKey={sort}
-        onChange={(key) => setSort(key as 'latest' | 'popular')}
-      />
-
-      <PhotoGrid style={{ marginTop: '16px' }}>
-        {photos.map((photo) => (
-          <PhotoCard key={photo.id} onClick={() => setSelectedPhoto(photo)}>
-            <img src={photo.url} alt="행사 사진" />
-            <Uploader>{photo.uploaderName}</Uploader>
-          </PhotoCard>
-        ))}
-      </PhotoGrid>
-
-      {/* 사진 클릭 시 상세 보기 모달 노출 */}
+      {/* 사진 상세 보기 모달 */}
       {selectedPhoto && (
         <PhotoDetailModal
           photo={selectedPhoto}
           allowDownload={true}
           onClose={() => setSelectedPhoto(null)}
+          onReactionToggle={handleReactionToggle}
         />
       )}
-    </Container>
+    </PageContainer>
   );
 };
 
-const Container = styled.div`
+const PageContainer = styled.div`
   padding: 16px;
   max-width: 480px;
   margin: 0 auto;
-  background-color: ${({ theme }) => theme.colors.bg};
-  min-height: 100vh;
-`;
-
-const Header = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  gap: 8px;
-`;
-
-const TitleGroup = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
 `;
 
 const PageTitle = styled.h2`
-  ${typography.appbar}
+  ${typography.page}
   color: ${({ theme }) => theme.colors.text};
-  margin: 0;
+  margin-bottom: 16px;
 `;
 
-const ButtonGroup = styled.div`
-  display: flex;
-  gap: 8px;
+const MessageState = styled.div`
+  ${typography.body}
+  color: ${({ theme }) => theme.colors.text2};
+  text-align: center;
+  padding: 40px 0;
+  line-height: 1.5;
 `;
 
 const PhotoGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
-`;
-
-const PhotoCard = styled.div`
-  border-radius: 12px;
-  overflow: hidden;
-  background: ${({ theme }) => theme.colors.surface};
-  border: 1px solid ${({ theme }) => theme.colors.border};
-  cursor: pointer;
-  transition: transform 0.2s ease;
-
-  &:hover {
-    transform: translateY(-2px);
-  }
-
-  img {
-    width: 100%;
-    height: 180px;
-    object-fit: cover;
-  }
-`;
-
-const Uploader = styled.div`
-  padding: 8px 12px;
-  ${typography.micro}
-  color: ${({ theme }) => theme.colors.text2};
 `;
