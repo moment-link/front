@@ -8,6 +8,7 @@ import { EventJoinPage } from './pages/participant/EventJoinPage';
 import { EventAlbumPage } from './pages/participant/EventAlbumPage';
 import { PhotoUploadPage } from './pages/participant/PhotoUploadPage';
 import { MomentViewPage } from './pages/participant/MomentViewPage';
+import { HostLoginPage } from './pages/host/HostLoginPage';
 
 export const App: React.FC = () => {
   return (
@@ -31,6 +32,9 @@ export const App: React.FC = () => {
           <Route path="/upload" element={<PhotoUploadPage />} />
           <Route path="/event/:eventId/upload" element={<PhotoUploadPage />} />
 
+          {/* O-01. 주최자 로그인 */}
+          <Route path="/host/login" element={<HostLoginPage />} />
+          
           {/* 와일드카드 처리 */}
           <Route path="*" element={<Navigate to="/event/fkYi8kQ8T53UzB7X7TLQKsUohTktW9gKSJxhrKHIm-E/join" replace />} />
         </Routes>
