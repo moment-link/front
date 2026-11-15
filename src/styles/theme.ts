@@ -47,9 +47,6 @@ export const theme = {
   /**
    * 2. Service Role Tokens (서비스 역할 토큰)
    * 컴포넌트 스타일링 시 직접 바인딩해야 하는 의도 기반 색상 토큰입니다.
-   * @example
-   * background-color: ${({ theme }) => theme.colors.surface};
-   * color: ${({ theme }) => theme.colors.text};
    */
   colors: {
     /** 기본 화면 배경색 (#161826) */
@@ -72,7 +69,7 @@ export const theme = {
     accentLine: '#6a91ff',
     /** 강조 텍스트 및 선택된 아이콘 (#c2d4fe) */
     accentText: '#c2d4fe',
-    /** 은은한 강조 배기라운드 틴트 (#1a2853) */
+    /** 은은한 강조 백그라운드 틴트 (#1a2853) */
     accentTint: '#1a2853',
     /** 배지 및 태그 강조 배경 (#22398c) */
     accentBadge: '#22398c',
@@ -130,49 +127,49 @@ export const theme = {
    * 서비스 내에서 사용하는 글로벌 서체 스펙입니다.
    */
   fonts: {
-    body: `'Inter', 'Pretendard Variable', 'Pretendard', system-ui, -apple-system, sans-serif`,
+    body: `'Pretendard Variable', 'Pretendard', 'Inter', system-ui, -apple-system, sans-serif`,
     mono: `'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace`,
   },
 
   /**
-   * 6. Typography Token Specification (Figma 스펙 반영)
-   * Figma 디자인 시스템의 타이포그래피 토큰 값 정의입니다.
+   * 6. Typography Token Specification (Figma 시안 시각적 굵기 반영)
+   * 시안 이미지의 타이틀·버튼·탭·뱃지 무게감과 동일하게 표현되도록 보정된 토큰 값입니다.
    */
   typography: {
     display: {
       fontSize: '28px',
       lineHeight: '1.2',
-      fontWeight: 500,
+      fontWeight: 700,
       letterSpacing: '-0.02em',
     },
     title: {
       fontSize: '24px',
       lineHeight: '1.2',
-      fontWeight: 500,
+      fontWeight: 700, // 행사명 타이틀 ('2026 가을 워크숍')
       letterSpacing: '-0.02em',
     },
     page: {
       fontSize: '22px',
       lineHeight: '1.25',
-      fontWeight: 500,
+      fontWeight: 700, // 공유 앨범 상단 타이틀, 통계 큰 숫자
       letterSpacing: '-0.02em',
     },
     empty: {
       fontSize: '17px',
       lineHeight: '1.35',
-      fontWeight: 400,
+      fontWeight: 500,
       letterSpacing: 'normal',
     },
     appbar: {
       fontSize: '16px',
       lineHeight: '1.3',
-      fontWeight: 500,
+      fontWeight: 600, // 앱바 제목 ('사진 업로드', 'Moment 카드')
       letterSpacing: 'normal',
     },
     section: {
       fontSize: '15px',
       lineHeight: '1.3',
-      fontWeight: 500,
+      fontWeight: 600, // 주요 CTA 버튼 ('참여 시작하기', '업로드') 및 섹션 제목
       letterSpacing: 'normal',
     },
     body: {
@@ -184,7 +181,7 @@ export const theme = {
     label: {
       fontSize: '13px',
       lineHeight: '1.45',
-      fontWeight: 400,
+      fontWeight: 500, // 세그먼트 탭 ('최신순', '인기순'), 중간 크기 버튼
       letterSpacing: 'normal',
     },
     caption: {
@@ -196,13 +193,13 @@ export const theme = {
     micro: {
       fontSize: '11px',
       lineHeight: '1.4',
-      fontWeight: 400,
+      fontWeight: 500, // 배지 ('진행중'), 칩, 그리드 작성자 닉네임
       letterSpacing: 'normal',
     },
     mono: {
       fontSize: '12px',
       lineHeight: '1.4',
-      fontWeight: 400,
+      fontWeight: 500,
       fontFamily: `'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace`,
       letterSpacing: 'normal',
     },
