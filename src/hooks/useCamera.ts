@@ -1,3 +1,8 @@
+/**
+ * @file useCamera.ts
+ * @description WebRTC 기반 카메라 스트림 및 MediaRecorder 동영상 녹화 관리 커스텀 훅 (기본 카메라 복귀 시 자동 재연결 로직 포함)
+ */
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 
 export const useCamera = () => {
@@ -13,8 +18,9 @@ export const useCamera = () => {
   const recordedChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
 
-  /** 카메라 스트림 시작 */
+  /** 카메라 스트림 시작 (재호출 시 기존 스트림 정리 후 안전 재연결) */
   const startCamera = useCallback(async () => {
+    // 이미 활성화된 유효한 스트림이 있는 경우
     if (streamRef.current && streamRef.current.active) {
       if (videoRef.current && videoRef.current.srcObject !== streamRef.current) {
         videoRef.current.srcObject = streamRef.current;
@@ -75,6 +81,28 @@ export const useCamera = () => {
     }
   }, [stream]);
 
+  /**
+   * [핵심 보완] 사용자가 기본 카메라로 전환했다가 돌아왔을 때(브라우저 탭 포커스 복귀 등),
+   * 카메라 스트림이 죽어있다면 자동으로 재연결을 시도합니다.
+   */
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (!streamRef.current || !streamRef.current.active) {
+          console.info('[useCamera] 브라우저 포커스 복귀 감지: 카메라 스트림을 재연결합니다.');
+          startCamera();
+        }
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
+  }, [startCamera]);
+
   /** 카메라 스트림 완전 중단 */
   const stopCamera = useCallback(() => {
     if (timerRef.current) {
@@ -96,6 +124,7 @@ export const useCamera = () => {
     setStream(null);
   }, []);
 
+  // 언마운트 시 트랙 자동 중단
   useEffect(() => {
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current);
@@ -106,7 +135,7 @@ export const useCamera = () => {
     };
   }, []);
 
-  /** 사진 스틸 프레임 즉시 캡처 (지연 없음) */
+  /** 프레임 캡처 (사진 촬영) */
   const captureFrame = useCallback((): Promise<File | null> => {
     return new Promise((resolve) => {
       if (!videoRef.current || !streamRef.current) {
@@ -115,9 +144,12 @@ export const useCamera = () => {
       }
 
       const video = videoRef.current;
+      const width = video.videoWidth || 1920;
+      const height = video.videoHeight || 1080;
+
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
+      canvas.width = width;
+      canvas.height = height;
 
       const ctx = canvas.getContext('2d');
       if (!ctx) {
@@ -125,7 +157,8 @@ export const useCamera = () => {
         return;
       }
 
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, width, height);
+
       canvas.toBlob(
         (blob) => {
           if (!blob) {
