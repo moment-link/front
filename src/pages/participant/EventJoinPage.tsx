@@ -1,6 +1,6 @@
 /**
  * @file EventJoinPage.tsx
- * @description 참가자 행사 입장 및 세션 발급 페이지 (Figma 디자인 및 컴포넌트 규격 완벽 반영)
+ * @description P-01 QR 접속 페이지 (닉네임 미입력 시 랜덤 닉네임 자동 배정 및 기존 캐시 초기화)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -8,26 +8,50 @@ import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { getPublicEventInfo, postJoinSession } from '../../services/participantApi';
 import type { PublicEventInfo } from '../../types/participant';
-import { Button, Badge, TextField } from '../../components/common';
+import { Button, Badge, TextField, Modal, LiveIndicator } from '../../components/common';
 import { typography } from '../../styles/typography';
 
+// 닉네임 미입력 시 자동 부여할 랜덤 닉네임 풀
+const RANDOM_NICKNAMES = [
+  '반짝이는 수달',
+  '용감한 고래',
+  '신나는 다람쥐',
+  '춤추는 펭귄',
+  '노래하는 여우',
+  '웃는 돌고래',
+];
+
+const generateRandomNickname = () => {
+  const randomIndex = Math.floor(Math.random() * RANDOM_NICKNAMES.length);
+  return RANDOM_NICKNAMES[randomIndex];
+};
+
 export const EventJoinPage: React.FC = () => {
-  const { shareKey } = useParams<{ shareKey: string }>();
+  const { shareKey = 'demo-event' } = useParams<{ shareKey: string }>();
   const navigate = useNavigate();
 
   const [eventInfo, setEventInfo] = useState<PublicEventInfo | null>(null);
   const [nickname, setNickname] = useState('');
   const [loading, setLoading] = useState(false);
   const [infoLoading, setInfoLoading] = useState(true);
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
 
-  // 1. 공유 키 기반 행사 기본 정보 로드
+  // 입장 화면 진입 시 과거에 남아있던 '김홍익' 등의 구버전 닉네임 캐시 초기화
+  useEffect(() => {
+    if (sessionStorage.getItem('currentNickname') === '김홍익') {
+      sessionStorage.removeItem('currentNickname');
+    }
+    if (localStorage.getItem('participantNickname') === '김홍익') {
+      localStorage.removeItem('participantNickname');
+    }
+  }, []);
+
   useEffect(() => {
     if (!shareKey) return;
 
     setInfoLoading(true);
     getPublicEventInfo(shareKey)
       .then((data) => {
-        console.log('[행사 정보 로드 성공]:', data);
         setEventInfo(data);
       })
       .catch((err) => {
@@ -38,7 +62,6 @@ export const EventJoinPage: React.FC = () => {
       });
   }, [shareKey]);
 
-  // 날짜 포맷팅 함수 (MM.DD HH:mm ~ MM.DD HH:mm)
   const formatDateRange = (startsAt?: string, endsAt?: string) => {
     if (!startsAt || !endsAt) return '10.02 09:00 ~ 10.03 18:00';
     const start = new Date(startsAt);
@@ -59,7 +82,6 @@ export const EventJoinPage: React.FC = () => {
     return `${formatStart} ~ ${formatEnd}`;
   };
 
-  // 2. 세션 발급 및 행사 입장 처리
   const handleJoin = async () => {
     if (!shareKey) {
       alert('유효한 공유 키가 존재하지 않습니다.');
@@ -68,21 +90,19 @@ export const EventJoinPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const currentEventId = eventInfo?.eventId || 45;
+      const currentEventId = eventInfo?.eventId || 42;
       const session = await postJoinSession(Number(currentEventId), shareKey);
-      console.log('[세션 정보 수신]:', session);
-
       const targetEventId = session?.eventId || currentEventId;
+
+      // 입력한 닉네임이 없으면 랜덤 닉네임 자동 배정
+      const assignedNickname = nickname.trim() || generateRandomNickname();
 
       if (targetEventId) {
         sessionStorage.setItem('currentSessionId', String(session?.sessionId || ''));
         sessionStorage.setItem('currentEventId', String(targetEventId));
         sessionStorage.setItem('currentShareKey', shareKey.trim());
-        if (nickname.trim()) {
-          sessionStorage.setItem('currentNickname', nickname.trim());
-        }
-
-        console.log(`[페이지 이동 준비]: /event/${targetEventId}/album`);
+        sessionStorage.setItem('currentNickname', assignedNickname);
+        localStorage.setItem('participantNickname', assignedNickname);
 
         setTimeout(() => {
           navigate(`/event/${targetEventId}/album`);
@@ -92,24 +112,25 @@ export const EventJoinPage: React.FC = () => {
       }
     } catch (error: any) {
       console.error('행사 접속 실패:', error);
-      if (error.response?.status === 403) {
-        alert('해당 행사는 현재 공개 접근이 차단되어 있거나 유효하지 않은 공유 키입니다.');
-      } else {
-        alert('행사 접속 중 오류가 발생했습니다. 다시 시도해 주세요.');
-      }
+      alert('행사 접속 중 오류가 발생했습니다. 다시 시도해 주세요.');
     } finally {
       setLoading(false);
     }
   };
+
+// 실서버의 '참가자 개발용 행사' 또는 '참가자 개발용 테스트 행사'를 시안 타이틀인 '2026 가을 워크숍'으로 표출
+  const displayEventName =
+    !eventInfo?.name || eventInfo.name.includes('개발용')
+      ? '2026 가을 워크숍'
+      : eventInfo.name;
 
   return (
     <PageContainer>
       {/* 1. 상단 행사 헤더 정보 */}
       <HeaderSection>
         <SubTitle>초대받은 행사</SubTitle>
-        <EventTitle>{eventInfo?.name || '2026 가을 워크숍'}</EventTitle>
+        <EventTitle>{displayEventName}</EventTitle>
 
-        {/* 행사 기간 + 우측 진행중 뱃지 (기존 Badge 규격 status, label 적용) */}
         <DateRow>
           <EventDate>{formatDateRange(eventInfo?.startsAt, eventInfo?.endsAt)}</EventDate>
           <Badge status="open" label="진행중" />
@@ -119,12 +140,13 @@ export const EventJoinPage: React.FC = () => {
       {/* 2. 실시간 포토월 미리보기 카드 */}
       <PhotoWallCard>
         <PhotoWallBadge>
-          <LiveDot /> 실시간 포토월
+          <LiveIndicator />
+          <span>실시간 포토월</span>
         </PhotoWallBadge>
         <PhotoWallFooter>익명 참가자 · 반응 21</PhotoWallFooter>
       </PhotoWallCard>
 
-      {/* 3. 닉네임 입력 세션 */}
+      {/* 3. 닉네임 입력 섹션 */}
       <InputSection>
         <InputLabel>닉네임</InputLabel>
         <TextField
@@ -135,7 +157,7 @@ export const EventJoinPage: React.FC = () => {
         <InputGuide>예: 반짝이는 수달 · 주최자가 익명 표시로 설정한 행사예요</InputGuide>
       </InputSection>
 
-      {/* 4. 하단 참여 시작하기 버튼 영역 */}
+      {/* 4. 하단 참여 시작하기 버튼 및 법적 고지 */}
       <BottomActionSection>
         <Button
           $variant="primary"
@@ -146,40 +168,92 @@ export const EventJoinPage: React.FC = () => {
         >
           {loading ? '접속 처리 중...' : '참여 시작하기'}
         </Button>
+
         <FooterGuide>회원가입·앱 설치 없이 바로 사진을 올릴 수 있어요</FooterGuide>
+
+        <LegalNoticeText>
+          참여 시작 시{' '}
+          <PolicyLinkButton type="button" onClick={() => setIsPolicyModalOpen(true)}>
+            서비스 이용 및 초상권·개인정보 처리 안내
+          </PolicyLinkButton>
+          에 동의한 것으로 간주됩니다.
+        </LegalNoticeText>
       </BottomActionSection>
+
+      {/* 상세 약관 안내 모달 */}
+      <Modal
+        isOpen={isPolicyModalOpen}
+        title="서비스 이용 및 초상권·개인정보 안내"
+        onClose={() => setIsPolicyModalOpen(false)}
+      >
+        <PolicyContent>
+          <PolicyItem>
+            <PolicyHeading>1. 미디어 공개 및 포토월 송출 안내</PolicyHeading>
+            <PolicyDesc>
+              업로드된 사진 및 영상은 주최자의 검토와 승인을 거쳐 행사장 대형 스크린(실시간 포토월) 및 참가자 공유 앨범에 공개될 수 있습니다.
+            </PolicyDesc>
+          </PolicyItem>
+          <PolicyItem>
+            <PolicyHeading>2. 타인의 초상권 및 저작권 보호 의무</PolicyHeading>
+            <PolicyDesc>
+              타인의 얼굴이나 신체가 식별되는 미디어를 업로드할 때는 당사자의 동의를 구해야 하며, 초상권 침해·부적절한 게시물은 승인 거절 또는 삭제될 수 있습니다.
+            </PolicyDesc>
+          </PolicyItem>
+          <PolicyItem>
+            <PolicyHeading>3. 개인정보 및 EXIF 메타데이터 수집·이용</PolicyHeading>
+            <PolicyDesc>
+              기기 단위 임시 세션 식별자(participant_token)로 참가자를 구분하며, 사진의 촬영 시각(EXIF) 정보는 시간대별 Moment 카드 자동 분류 목적으로만 활용됩니다.
+            </PolicyDesc>
+          </PolicyItem>
+          <PolicyItem>
+            <PolicyHeading>4. 보관 기간 및 외부 저장소 백업</PolicyHeading>
+            <PolicyDesc>
+              업로드된 원본 미디어는 서비스 클라우드에 기본 90일간 보관되며, 주최자가 연동한 외부 저장소(Google Drive)로 백업될 수 있습니다.
+            </PolicyDesc>
+          </PolicyItem>
+        </PolicyContent>
+        <Button
+          $variant="primary"
+          $size="medium"
+          onClick={() => setIsPolicyModalOpen(false)}
+          style={{ width: '100%', marginTop: '16px' }}
+        >
+          확인
+        </Button>
+      </Modal>
     </PageContainer>
   );
 };
 
+// ============================================================================
+// 스타일 정의
+// ============================================================================
 const PageContainer = styled.div`
-  padding: 24px 20px;
+  padding: 24px 20px 32px;
   max-width: 480px;
   margin: 0 auto;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: ${({ theme }) => theme.colors.bg || '#0f172a'};
-  color: ${({ theme }) => theme.colors.text || '#ffffff'};
+  background-color: ${({ theme }) => theme.colors.bg};
+  color: ${({ theme }) => theme.colors.text};
 `;
 
 const HeaderSection = styled.div`
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 `;
 
 const SubTitle = styled.span`
   ${typography.caption}
-  color: ${({ theme }) => theme.colors.text2 || '#94a3b8'};
+  color: ${({ theme }) => theme.colors.text2};
   display: block;
   margin-bottom: 6px;
 `;
 
 const EventTitle = styled.h1`
-  ${typography.title || typography.page}
-  font-size: 26px;
-  font-weight: 700;
-  color: ${({ theme }) => theme.colors.text || '#ffffff'};
-  margin-bottom: 8px;
+  ${typography.title}
+  color: ${({ theme }) => theme.colors.text};
+  margin: 0 0 10px 0;
 `;
 
 const DateRow = styled.div`
@@ -190,73 +264,113 @@ const DateRow = styled.div`
 
 const EventDate = styled.span`
   ${typography.body}
-  font-size: 14px;
-  color: ${({ theme }) => theme.colors.text2 || '#94a3b8'};
+  color: ${({ theme }) => theme.colors.text2};
 `;
 
 const PhotoWallCard = styled.div`
   width: 100%;
-  height: 220px;
+  height: 196px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #1e40af 0%, #1e1b4b 100%);
+  background: linear-gradient(165deg, #2b44ff 0%, #17237a 55%, #121526 100%);
+  border: 1px solid ${({ theme }) => theme.colors.border};
   padding: 16px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 `;
 
 const PhotoWallBadge = styled.div`
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(16, 18, 35, 0.65);
+  backdrop-filter: blur(6px);
   border-radius: 20px;
-  color: #ffffff;
-  font-size: 12px;
+  color: ${({ theme }) => theme.colors.text};
+  ${typography.caption}
   width: fit-content;
 `;
 
-const LiveDot = styled.span`
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: #60a5fa;
-`;
-
 const PhotoWallFooter = styled.p`
-  ${typography.caption}
-  color: rgba(255, 255, 255, 0.8);
+  ${typography.body}
+  color: ${({ theme }) => theme.colors.text};
+  margin: 0;
 `;
 
 const InputSection = styled.div`
-  margin-bottom: auto;
+  margin-bottom: 24px;
 `;
 
 const InputLabel = styled.label`
   ${typography.body}
-  font-weight: 600;
   display: block;
   margin-bottom: 8px;
-  color: ${({ theme }) => theme.colors.text || '#ffffff'};
+  color: ${({ theme }) => theme.colors.text2};
 `;
 
 const InputGuide = styled.p`
   ${typography.caption}
-  color: ${({ theme }) => theme.colors.text2 || '#94a3b8'};
-  margin-top: 8px;
+  color: ${({ theme }) => theme.colors.text3};
+  margin: 8px 0 0 0;
 `;
 
 const BottomActionSection = styled.div`
-  margin-top: 32px;
-  padding-bottom: 16px;
+  margin-top: auto;
   text-align: center;
 `;
 
 const FooterGuide = styled.p`
   ${typography.caption}
-  color: ${({ theme }) => theme.colors.text2 || '#94a3b8'};
-  margin-top: 12px;
+  color: ${({ theme }) => theme.colors.text3};
+  margin: 12px 0 0 0;
+`;
+
+const LegalNoticeText = styled.p`
+  margin: 8px 0 0 0;
+  ${typography.micro}
+  color: ${({ theme }) => theme.colors.text4};
+  text-align: center;
+  line-height: 1.4;
+`;
+
+const PolicyLinkButton = styled.button`
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: ${({ theme }) => theme.colors.text3};
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+`;
+
+const PolicyContent = styled.div`
+  max-height: 55vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+`;
+
+const PolicyItem = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`;
+
+const PolicyHeading = styled.h4`
+  ${typography.label}
+  font-weight: 500;
+  color: ${({ theme }) => theme.colors.text};
+  margin: 0;
+`;
+
+const PolicyDesc = styled.p`
+  ${typography.caption}
+  color: ${({ theme }) => theme.colors.text2};
+  line-height: 1.5;
+  margin: 0;
 `;

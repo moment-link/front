@@ -1,12 +1,18 @@
+/**
+ * @file PhotoDetailModal.tsx
+ * @description 사진 상세 전체 화면 뷰어 (공통 컴포넌트 AppBar, IconButton, Avatar, Button 적용)
+ */
+
 import React, { useState } from 'react';
 import styled from 'styled-components';
 import { typography } from '../../styles/typography';
-import { IconButton, Icon, Button } from '../common';
+import { AppBar, Avatar, Button, Icon, IconButton } from '../common';
 import type { AlbumPhoto } from '../../types/participant';
+import { getPlaceholderGradient } from '../../styles/placeholder';
 
 interface PhotoDetailModalProps {
   photo: AlbumPhoto | null;
-  allowDownload?: boolean; // 주최자 다운로드 허용 정책
+  allowDownload?: boolean;
   onClose: () => void;
   onReactionToggle?: (photoId: string | number, emoji: string) => void;
 }
@@ -19,7 +25,6 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
 }) => {
   if (!photo) return null;
 
-  // 이모지 종류 정의
   const emojiList = [
     { key: 'heart', symbol: '❤️' },
     { key: 'laugh', symbol: '😂' },
@@ -27,7 +32,6 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
     { key: 'clap', symbol: '👏' },
   ];
 
-  // 각 이모지별 상태 관리 (로컬 UI 반영용)
   const [reactions, setReactions] = useState<{ [key: string]: number }>({
     heart: photo.reactions?.heart || 0,
     laugh: photo.reactions?.laugh || 0,
@@ -35,27 +39,25 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
     clap: photo.reactions?.clap || 0,
   });
 
-  const [userSelectedEmoji, setUserSelectedEmoji] = useState<string | null>(null);
+  const [userSelectedEmoji, setUserSelectedEmoji] = useState<string | null>('heart');
 
   const handleEmojiClick = (emojiKey: string) => {
     setReactions((prev) => {
       const isSelected = userSelectedEmoji === emojiKey;
-      const newReactions = { ...prev };
+      const next = { ...prev };
 
-      // 이전 선택 취소
-      if (userSelectedEmoji && newReactions[userSelectedEmoji] > 0) {
-        newReactions[userSelectedEmoji] -= 1;
+      if (userSelectedEmoji && next[userSelectedEmoji] > 0) {
+        next[userSelectedEmoji] -= 1;
       }
 
-      // 새로 선택
       if (!isSelected) {
-        newReactions[emojiKey] = (newReactions[emojiKey] || 0) + 1;
+        next[emojiKey] = (next[emojiKey] || 0) + 1;
         setUserSelectedEmoji(emojiKey);
       } else {
         setUserSelectedEmoji(null);
       }
 
-      return newReactions;
+      return next;
     });
 
     if (onReactionToggle) {
@@ -64,186 +66,210 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
   };
 
   const handleDownload = () => {
-    if (!allowDownload) {
-      alert('주최자가 사진 다운로드를 제한한 행사입니다.');
-      return;
-    }
+    if (!allowDownload) return;
     const link = document.createElement('a');
     link.href = photo.url;
-    link.download = `moment_${String(photo.id)}.jpg`;
+    link.download = `moment_${photo.id}.jpg`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const formatDate = (dateString: string) => {
+  const formatMetaDate = (dateString: string) => {
     const d = new Date(dateString);
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    return `${month}.${day} ${hours}:${minutes}`;
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${mm}.${dd} ${hh}:${min} · 1부 · 개회식`;
   };
 
   return (
-    <Overlay onClick={onClose}>
-      <ModalContainer onClick={(e) => e.stopPropagation()}>
-        {/* 상단 헤더: 뒤로가기(<) 버튼 + 업로더 정보 */}
-        <Header>
-          <IconButton onClick={onClose} aria-label="뒤로가기">
-            <Icon icon="CaretLeft" $size={20} />
-          </IconButton>
-          <UploaderInfo>
-            <Nickname>{photo.uploaderName || '익명'}</Nickname>
-            <CaptureTime>{formatDate(photo.capturedAt)}</CaptureTime>
-          </UploaderInfo>
-        </Header>
+    <FullScreenOverlay>
+      <ScreenContainer>
+        {/* 1. 공통 AppBar 및 IconButton 컴포넌트 적용 */}
+        <AppBar
+          title="사진"
+          leftAction={
+            <IconButton onClick={onClose} aria-label="뒤로가기">
+              <Icon icon="CaretLeft" $size={20} />
+            </IconButton>
+          }
+        />
 
-        {/* 이미지 보기 */}
-        <ImageWrapper>
-          <StyledImage src={photo.url} alt="상세 사진" />
-        </ImageWrapper>
+        <BodyContent>
+          {/* 2. 정사각형 고화질 사진 뷰어 */}
+          <PhotoFrame $bgGradient={getPlaceholderGradient(0)}>
+            {photo.url && <img src={photo.url} alt="상세 사진" />}
+          </PhotoFrame>
 
-        {/* 이모지 반응 버튼 영역 */}
-        <ReactionSection>
-          {emojiList.map((item) => {
-            const count = reactions[item.key] || 0;
-            const isActive = userSelectedEmoji === item.key;
-            return (
-              <EmojiButton
-                key={item.key}
-                $isActive={isActive}
-                onClick={() => handleEmojiClick(item.key)}
+          {/* 3. 공통 Avatar 컴포넌트 + 업로더 닉네임 + 일시/세션명 */}
+          <UploaderRow>
+            <Avatar name={photo.uploaderName || '민'} />
+            <UploaderMeta>
+              <UploaderName>{photo.uploaderName || '민지'}</UploaderName>
+              <SubInfo>{formatMetaDate(photo.capturedAt)}</SubInfo>
+            </UploaderMeta>
+          </UploaderRow>
+
+          {/* 4. 4열 세로형 반응 이모지 카드 그리드 */}
+          <ReactionGrid4Col>
+            {emojiList.map((item) => {
+              const count = reactions[item.key] || 0;
+              const isActive = userSelectedEmoji === item.key;
+              return (
+                <ReactionCard
+                  key={item.key}
+                  type="button"
+                  $active={isActive}
+                  onClick={() => handleEmojiClick(item.key)}
+                >
+                  <EmojiIcon>{item.symbol}</EmojiIcon>
+                  <ReactionCount>{count}</ReactionCount>
+                </ReactionCard>
+              );
+            })}
+          </ReactionGrid4Col>
+
+          <ReactionNotice>사진 1장당 반응은 1개만 등록·취소할 수 있어요</ReactionNotice>
+
+          {/* 5. 하단 사진 저장 버튼(공통 Button) 및 정책 안내 */}
+          <BottomArea>
+            {allowDownload && (
+              <Button
+                $variant="primary"
+                $size="large"
+                onClick={handleDownload}
+                style={{ width: '100%' }}
               >
-                <EmojiSymbol>{item.symbol}</EmojiSymbol>
-                <Count>{count}</Count>
-              </EmojiButton>
-            );
-          })}
-        </ReactionSection>
-
-        {/* 안내 문구 */}
-        <NoticeText>사진 1장에 반응 1개 · 다시 누르면 취소</NoticeText>
-
-        {/* 사진 저장 하단 CTA */}
-        <Footer>
-          <Button
-            $variant="primary"
-            $size="large"
-            disabled={!allowDownload}
-            onClick={handleDownload}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-          >
-            <Icon icon="DownloadSimple" $size={18} />
-            {allowDownload ? '사진 저장' : '다운로드 제한됨'}
-          </Button>
-        </Footer>
-      </ModalContainer>
-    </Overlay>
+                <Icon icon="DownloadSimple" $size={18} />
+                <span>사진 저장</span>
+              </Button>
+            )}
+            <DownloadPolicyText>
+              주최자가 다운로드를 허용한 행사에서만 보여요
+            </DownloadPolicyText>
+          </BottomArea>
+        </BodyContent>
+      </ScreenContainer>
+    </FullScreenOverlay>
   );
 };
 
-const Overlay = styled.div`
+// ============================================================================
+// 스타일 정의
+// ============================================================================
+const FullScreenOverlay = styled.div`
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background-color: ${({ theme }) => theme.colors.bg};
   z-index: 1000;
-  padding: 16px;
+  overflow-y: auto;
 `;
 
-const ModalContainer = styled.div`
-  width: 100%;
-  max-width: 440px;
-  height: 100%;
-  max-height: 90vh;
-  background-color: ${({ theme }) => theme.colors.bg};
-  border-radius: 16px;
-  overflow: hidden;
+const ScreenContainer = styled.div`
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 16px;
 `;
 
-const Header = styled.div`
+const BodyContent = styled.div`
+  padding: 16px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+`;
+
+const PhotoFrame = styled.div<{ $bgGradient: string }>`
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 16px;
+  overflow: hidden;
+  background: ${({ $bgGradient }) => $bgGradient};
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  margin-bottom: 16px;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+`;
+
+const UploaderRow = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 12px;
+  margin-bottom: 16px;
 `;
 
-const UploaderInfo = styled.div`
+const UploaderMeta = styled.div`
   display: flex;
   flex-direction: column;
   gap: 2px;
 `;
 
-const Nickname = styled.span`
-  ${typography.title}
+const UploaderName = styled.span`
+  ${typography.section}
   color: ${({ theme }) => theme.colors.text};
 `;
 
-const CaptureTime = styled.span`
+const SubInfo = styled.span`
   ${typography.caption}
   color: ${({ theme }) => theme.colors.text2};
 `;
 
-const ImageWrapper = styled.div`
-  flex: 1;
-  width: 100%;
-  border-radius: 12px;
-  overflow: hidden;
-  background-color: #000000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 16px;
-`;
-
-const StyledImage = styled.img`
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-`;
-
-const ReactionSection = styled.div`
+const ReactionGrid4Col = styled.div`
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 10px;
 `;
 
-const EmojiButton = styled.button<{ $isActive: boolean }>`
+const ReactionCard = styled.button<{ $active: boolean }>`
+  padding: 12px 0;
+  border-radius: 12px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 10px 0;
-  border-radius: 24px;
-  border: 1px solid ${({ $isActive, theme }) => ($isActive ? theme.colors.primary : theme.colors.border)};
-  background-color: ${({ $isActive }) => ($isActive ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.05)')};
   cursor: pointer;
   transition: all 0.2s ease;
+  background-color: ${({ $active, theme }) =>
+    $active ? theme.colors.sunken : theme.colors.surface};
+  border: 1px solid
+    ${({ $active, theme }) =>
+      $active ? theme.colors.accentLine : theme.colors.border};
 `;
 
-const EmojiSymbol = styled.span`
-  ${typography.appbar}
+const EmojiIcon = styled.span`
+  font-size: 20px;
 `;
 
-const Count = styled.span`
+const ReactionCount = styled.span`
   ${typography.label}
   color: ${({ theme }) => theme.colors.text};
 `;
 
-const NoticeText = styled.p`
+const ReactionNotice = styled.p`
   ${typography.caption}
   color: ${({ theme }) => theme.colors.text3};
-  text-align: left;
-  margin-bottom: 16px;
+  margin: 0 0 24px 0;
 `;
 
-const Footer = styled.div`
-  width: 100%;
+const BottomArea = styled.div`
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+`;
+
+const DownloadPolicyText = styled.p`
+  ${typography.micro}
+  color: ${({ theme }) => theme.colors.text3};
+  margin: 0;
 `;
