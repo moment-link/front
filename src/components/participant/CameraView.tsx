@@ -1,9 +1,9 @@
 /**
  * @file CameraView.tsx
- * @description 모바일 웹 즉석 촬영 뷰파인더 (플래시 제거 + 고속 셔터 + 기본 카메라 전환 + 촬영본 미리보기 모달)
+ * @description 모바일 웹 즉석 촬영 뷰파인더 (기본 카메라 복귀 시 무한 로딩 방지용 자동 재시작 마운트 효과 추가)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { RefObject } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { typography } from '../../styles/typography';
@@ -17,7 +17,10 @@ interface CameraViewProps {
   isStreamReady?: boolean;
   isRecording?: boolean;
   recordingSeconds?: number;
-  onOpenNativeCamera?: () => void;
+  nativePhotoInputId?: string;
+  nativeVideoInputId?: string;
+  onStartCamera?: () => void; // 추가된 카메라 재시작 콜백
+  onBeforeOpenNativeCamera?: () => void;
   onRemoveItem?: (id: string) => void;
   onClose: () => void;
   onCapture: () => Promise<void> | void;
@@ -32,7 +35,10 @@ export const CameraView: React.FC<CameraViewProps> = ({
   isStreamReady = false,
   isRecording = false,
   recordingSeconds = 0,
-  onOpenNativeCamera,
+  nativePhotoInputId = 'native-photo-camera-input',
+  nativeVideoInputId = 'native-video-camera-input',
+  onStartCamera,
+  onBeforeOpenNativeCamera,
   onRemoveItem,
   onClose,
   onCapture,
@@ -48,6 +54,13 @@ export const CameraView: React.FC<CameraViewProps> = ({
   const queueCount = queue.length;
   const latestItem = queueCount > 0 ? queue[queueCount - 1] : null;
 
+  // 컴포넌트가 렌더링되거나 기본 카메라에서 돌아와 다시 보일 때 스트림이 없으면 강제 재시작
+  useEffect(() => {
+    if (!isStreamReady && onStartCamera) {
+      onStartCamera();
+    }
+  }, [isStreamReady, onStartCamera]);
+
   const formatTimer = (sec: number) => {
     const m = String(Math.floor(sec / 60)).padStart(2, '0');
     const s = String(sec % 60).padStart(2, '0');
@@ -58,7 +71,6 @@ export const CameraView: React.FC<CameraViewProps> = ({
     if (!isStreamReady) return;
 
     if (captureMode === 'photo') {
-      // 찰칵 찍혔다는 시각적 피드백을 위한 가벼운 셔터 깜빡임 (0.12초)
       setIsShutterEffect(true);
       setTimeout(() => setIsShutterEffect(false), 120);
       await onCapture();
@@ -83,7 +95,6 @@ export const CameraView: React.FC<CameraViewProps> = ({
     <ViewfinderContainer>
       <ShutterBlinkOverlay $active={isShutterEffect} />
 
-      {/* 1. 상단 바: 좌측 닫기 / 중앙 대기열 N개 / 우측 균형용 여백 */}
       <TopBar>
         <IconButton onClick={onClose} aria-label="닫기">
           <Icon icon="X" $size={22} />
@@ -103,7 +114,6 @@ export const CameraView: React.FC<CameraViewProps> = ({
         <RightSpacer />
       </TopBar>
 
-      {/* 2. 중앙 3x3 격자 뷰파인더 영역 */}
       <ViewfinderBox>
         <VideoElement ref={videoRef} autoPlay playsInline muted />
 
@@ -126,17 +136,21 @@ export const CameraView: React.FC<CameraViewProps> = ({
           <GridCell />
         </GridOverlay>
 
-        {onOpenNativeCamera && (
-          <NativeCameraFloatingBtn type="button" onClick={onOpenNativeCamera}>
-            <Icon icon="Camera" $size={13} />
-            <span>기본 카메라로 전환</span>
-          </NativeCameraFloatingBtn>
-        )}
+        <NativeCameraButtonGroup>
+          <NativeCameraFloatingLabel
+            htmlFor={captureMode === 'video' ? nativeVideoInputId : nativePhotoInputId}
+            onClick={() => onBeforeOpenNativeCamera?.()}
+          >
+            <Icon icon={captureMode === 'video' ? 'Play' : 'Camera'} $size={13} />
+            <span>
+              {captureMode === 'video' ? '기본 카메라(동영상)로 전환' : '기본 카메라로 전환'}
+            </span>
+          </NativeCameraFloatingLabel>
+        </NativeCameraButtonGroup>
 
         <TimestampNotice>촬영 시각이 함께 저장돼요</TimestampNotice>
       </ViewfinderBox>
 
-      {/* 3. 하단 컨트롤 그룹 (여유 있는 패딩 배치) */}
       <BottomSection>
         <ModeSwitchRow>
           <ModeTab
@@ -197,7 +211,6 @@ export const CameraView: React.FC<CameraViewProps> = ({
         </BottomControls>
       </BottomSection>
 
-      {/* 4. 촬영한 사진 모아보기/삭제 모달 */}
       {isPreviewOpen && currentPreviewItem && (
         <PreviewModalOverlay onClick={() => setIsPreviewOpen(false)}>
           <PreviewModalCard onClick={(e) => e.stopPropagation()}>
@@ -267,7 +280,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
 };
 
 // ============================================================================
-// 스타일 정의
+// 스타일 정의 (기존과 동일)
 // ============================================================================
 const pulseAnimation = keyframes`
   0%, 100% { opacity: 1; }
@@ -407,22 +420,34 @@ const GridCell = styled.div`
   border: 0.5px solid ${({ theme }) => theme.colors.border};
 `;
 
-const NativeCameraFloatingBtn = styled.button`
+const NativeCameraButtonGroup = styled.div`
   position: absolute;
   bottom: 12px;
   left: 12px;
-  z-index: 3;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`;
+
+const NativeCameraFloatingLabel = styled.label`
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 6px 11px;
   border-radius: 16px;
-  background-color: rgba(18, 20, 38, 0.82);
+  background-color: rgba(18, 20, 38, 0.85);
   backdrop-filter: blur(6px);
   border: 1px solid ${({ theme }) => theme.colors.border};
   color: ${({ theme }) => theme.colors.text};
   ${typography.micro}
   cursor: pointer;
+  user-select: none;
+
+  &:active {
+    background-color: ${({ theme }) => theme.colors.accentTint};
+    border-color: ${({ theme }) => theme.colors.accentLine};
+  }
 `;
 
 const TimestampNotice = styled.span`
@@ -562,7 +587,7 @@ const PreviewModalCard = styled.div`
 const PreviewHeader = styled.div`
   display: flex;
   align-items: center;
-  justify-content: space-between;
+    justify-content: space-between;
 `;
 
 const PreviewTitle = styled.span`

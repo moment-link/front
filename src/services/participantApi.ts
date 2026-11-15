@@ -1,6 +1,6 @@
 /**
  * @file participantApi.ts
- * @description MomentLink 참가자 파트 백엔드 실서버 연동 서비스 (PublicEventController, ParticipantSessionController, DevController 완벽 대응)
+ * @description MomentLink 참가자 파트 백엔드 실서버 연동 서비스 (응답 데이터 타입 검증 및 배열 보장 방어 로직 적용)
  */
 
 import { api } from './api';
@@ -95,7 +95,7 @@ const MOCK_ALBUM_PHOTOS: AlbumPhoto[] = [
   },
 ];
 
-const sortMockPhotos = (sort: 'latest' | 'popular') => {
+const sortMockPhotos = (sort: 'latest' | 'popular'): AlbumPhoto[] => {
   const items = [...MOCK_ALBUM_PHOTOS];
   if (sort === 'popular') {
     return items.sort((a, b) => {
@@ -109,7 +109,6 @@ const sortMockPhotos = (sort: 'latest' | 'popular') => {
 
 /**
  * [DEV] 백엔드 DevController를 호출하여 유효한 개발용 행사와 accessKey를 즉시 발급받습니다.
- * 백엔드: POST /api/dev/events -> CommonResponse<DevEventResDto>
  */
 export const createDevEvent = async (): Promise<{ eventId: number; accessKey: string } | null> => {
   try {
@@ -122,7 +121,7 @@ export const createDevEvent = async (): Promise<{ eventId: number; accessKey: st
         ? data.publicAccessUrl.split('/').filter(Boolean).pop()
         : '');
 
-    if (accessKey) {
+    if (accessKey && data?.eventId) {
       sessionStorage.setItem('currentShareKey', accessKey);
       console.info('[REAL API - DevController] 신규 개발용 행사 발급 완료:', data);
       return { eventId: data.eventId, accessKey };
@@ -136,8 +135,6 @@ export const createDevEvent = async (): Promise<{ eventId: number; accessKey: st
 
 /**
  * [P-01] 공유 키(accessKey)를 이용해 공개 행사의 기본 정보를 조회합니다.
- * 백엔드: PublicEventController -> GET /api/v1/events/access (Header: X-Event-Access-Key)
- * 반환 형식: CommonResponse<PublicEventResDto> -> response.data.data
  */
 export const getPublicEventInfo = async (shareKey: string): Promise<PublicEventInfo> => {
   if (!shareKey) {
@@ -157,11 +154,15 @@ export const getPublicEventInfo = async (shareKey: string): Promise<PublicEventI
         'X-Event-Access-Key': cleanKey,
       },
     });
-    const result = response.data.data;
-    console.info('[REAL API] 공개 행사 조회 성공 (GET /api/v1/events/access):', result);
-    return result;
+    const result = response.data?.data ?? response.data;
+
+    if (result && typeof result === 'object' && 'eventId' in result) {
+      console.info('[REAL API] 공개 행사 조회 성공 (GET /api/v1/events/access):', result);
+      return result as PublicEventInfo;
+    }
+
+    throw new Error('유효하지 않은 행사 응답 형식입니다.');
   } catch (error: any) {
-    // 만약 DB 초기화로 인해 기존 URL의 shareKey가 만료(403)된 경우, DevController로 새 키를 발급받아 재조회
     if (error.response?.status === 403) {
       console.warn('[REAL API] 기존 공유 키가 만료되어 /api/dev/events 로 신규 행사를 자동 발급합니다.');
       const devEvent = await createDevEvent();
@@ -171,7 +172,10 @@ export const getPublicEventInfo = async (shareKey: string): Promise<PublicEventI
             'X-Event-Access-Key': devEvent.accessKey,
           },
         });
-        return retryRes.data.data;
+        const retryData = retryRes.data?.data ?? retryRes.data;
+        if (retryData && typeof retryData === 'object' && 'eventId' in retryData) {
+          return retryData as PublicEventInfo;
+        }
       }
     }
 
@@ -182,8 +186,6 @@ export const getPublicEventInfo = async (shareKey: string): Promise<PublicEventI
 
 /**
  * [P-02] 참가자 세션을 발급받고 브라우저 쿠키(participant_token)를 생성합니다.
- * 백엔드: ParticipantSessionController -> POST /api/v1/participant/{eventId}/session
- * 반환 형식: ResponseEntity<SessionResDto> -> response.data ({ sessionId, eventId, expiresAt })
  */
 export const postJoinSession = async (
   eventId: number,
@@ -198,7 +200,6 @@ export const postJoinSession = async (
     };
   }
 
-  // DevController를 통해 갱신된 키가 있다면 우선 사용
   const activeKey = (sessionStorage.getItem('currentShareKey') || shareKey).trim();
 
   try {
@@ -211,11 +212,15 @@ export const postJoinSession = async (
         },
       }
     );
-    console.info(
-      '[REAL API] 참가자 세션 발급 및 participant_token 쿠키 생성 완료 (POST /session):',
-      response.data
-    );
-    return response.data;
+    const data = response.data?.data ?? response.data;
+    if (data && typeof data === 'object' && 'sessionId' in data) {
+      console.info(
+        '[REAL API] 참가자 세션 발급 및 participant_token 쿠키 생성 완료 (POST /session):',
+        data
+      );
+      return data as ParticipantSession;
+    }
+    throw new Error('유효하지 않은 세션 응답 형식입니다.');
   } catch (error: any) {
     console.warn('[FALLBACK] 실서버 세션 발급 실패, 로컬 임시 세션으로 대체합니다.', error);
     return {
@@ -228,13 +233,13 @@ export const postJoinSession = async (
 
 /**
  * [P-02 보조] 현재 참가자 세션을 쿠키(participant_token) 기반으로 조회합니다.
- * 백엔드: ParticipantSessionController -> GET /api/v1/participant/{eventId}/session
  */
 export const getParticipantSession = async (eventId: number): Promise<ParticipantSession | null> => {
   if (USE_MOCK) return null;
   try {
     const response = await api.get(`/api/v1/participant/${eventId}/session`);
-    return response.data;
+    const data = response.data?.data ?? response.data;
+    return data && typeof data === 'object' && 'sessionId' in data ? data : null;
   } catch {
     return null;
   }
@@ -242,7 +247,7 @@ export const getParticipantSession = async (eventId: number): Promise<Participan
 
 /**
  * [P-03] 공유 앨범 피드의 사진 목록을 조회합니다.
- * (현재 백엔드 미구현 컨트롤러 -> 404 발생 시 자동으로 Mock 시안 리스트 반환)
+ * - 반드시 배열(AlbumPhoto[])만 반환하도록 Array.isArray 방어 로직 적용
  */
 export const getAlbumPhotos = async (
   eventId: number,
@@ -257,7 +262,11 @@ export const getAlbumPhotos = async (
     const response = await api.get(`/api/v1/participant/${eventId}/media`, {
       params: { sort: sort.toUpperCase() },
     });
-    return response.data?.data ?? response.data;
+    const list = response.data?.data ?? response.data;
+    if (Array.isArray(list)) {
+      return list;
+    }
+    return sortMockPhotos(sort);
   } catch {
     return sortMockPhotos(sort);
   }
