@@ -10,6 +10,11 @@ import { PhotoUploadPage } from './pages/participant/PhotoUploadPage';
 import { MomentViewPage } from './pages/participant/MomentViewPage';
 import { HostLoginPage } from './pages/host/HostLoginPage';
 
+import { AuthProvider } from './components/host/AuthProvider';
+import { RequireAuth } from './components/host/RequireAuth';
+import { OAuthCallbackPage } from './pages/host/OAuthCallbackPage';
+import { HostEventListPage } from './pages/host/HostEventListPage';
+
 export const App: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
@@ -33,7 +38,19 @@ export const App: React.FC = () => {
           <Route path="/event/:eventId/upload" element={<PhotoUploadPage />} />
 
           {/* O-01. 주최자 로그인 */}
-          <Route path="/host/login" element={<HostLoginPage />} />
+          <Route path="/host/login" element={<HostLoginPage />} />        
+          
+          {/* 주최자 인증 영역: 이 안의 화면만 시작 시 로그인 복구(갱신)를 시도한다 */}
+          <Route element={<AuthProvider />}>
+            {/* 구글 로그인 후 돌아오는 화면 */}
+            <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+
+            {/* 로그인한 주최자만 접근 */}
+            <Route element={<RequireAuth />}>
+              {/* O-02. 내 행사 목록 */}
+              <Route path="/host/events" element={<HostEventListPage />} />
+            </Route>
+          </Route>
           
           {/* 와일드카드 처리 */}
           <Route path="*" element={<Navigate to="/event/fkYi8kQ8T53UzB7X7TLQKsUohTktW9gKSJxhrKHIm-E/join" replace />} />
