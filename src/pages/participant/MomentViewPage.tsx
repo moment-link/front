@@ -1,24 +1,37 @@
 /**
  * @file MomentViewPage.tsx
- * @description P-06 참가자 Moment 카드 화면 (첨부 시안 image_d2d125.jpg 100% 일치 구현)
+ * @description P-06 참가자 Moment 카드 화면 (백엔드 GET .../moments 실데이터 연동 + 미생성 시 시안 폴백)
+ * @note
+ * - 백엔드에 주최자가 생성한 Moment 데이터가 있으면 실제 세션 제목/시간/썸네일을 렌더링합니다.
+ * - 주최자 파트가 아직 Moment를 생성하지 않은 상태에서도 UI 검토가 가능하도록 기본 시안 3개 세션으로 폴백합니다.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { typography } from '../../styles/typography';
 import { Chip, Icon } from '../../components/common';
+import {
+  getParticipantMoments,
+  type ParticipantMomentDto,
+} from '../../services/participantApi';
 
 interface MomentSessionItem {
   id: string;
   title: string;
   meta: string;
   countText: string;
-  tiles: { gradient: string; isVideo?: boolean }[];
+  tiles: { gradient: string; url?: string; isVideo?: boolean }[];
 }
 
-// 시안(image_d2d125.jpg)의 3개 세션 카드 데이터 및 타일 그라디언트
-const MOMENT_SESSIONS: MomentSessionItem[] = [
+const DEFAULT_TILE_GRADIENTS = [
+  'linear-gradient(145deg, #565b6e 0%, #2a314d 100%)',
+  'linear-gradient(145deg, #273df2 0%, #19279c 100%)',
+  'linear-gradient(145deg, #6c7082 0%, #3d435c 100%)',
+];
+
+// 주최자 Moment 미생성 또는 Mock 환경에서 사용하는 기본 시안 세션 데이터
+const FALLBACK_MOMENT_SESSIONS: MomentSessionItem[] = [
   {
     id: 'session_1',
     title: '1부 · 개회식',
@@ -54,8 +67,71 @@ const MOMENT_SESSIONS: MomentSessionItem[] = [
   },
 ];
 
+const formatTimeRange = (startsAt?: string | null, endsAt?: string | null, location?: string | null) => {
+  const formatHHMM = (iso?: string | null) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const startStr = formatHHMM(startsAt);
+  const endStr = formatHHMM(endsAt);
+  const timePart = startStr && endStr ? `${startStr}–${endStr}` : startStr || '';
+  return [timePart, location].filter(Boolean).join(' · ') || '행사 세션';
+};
+
+const mapDtoToMomentSession = (dto: ParticipantMomentDto): MomentSessionItem => {
+  const previews = (dto.mediaList || []).slice(0, 3);
+  const tiles = [0, 1, 2].map((idx) => {
+    const media = previews[idx];
+    return {
+      gradient: DEFAULT_TILE_GRADIENTS[idx % DEFAULT_TILE_GRADIENTS.length],
+      url: media?.thumbnailUrl || undefined,
+      isVideo: media?.mediaType === 'VIDEO',
+    };
+  });
+
+  const totalCount = dto.mediaCount ?? dto.mediaList?.length ?? 0;
+
+  return {
+    id: String(dto.momentId),
+    title: dto.title,
+    meta: dto.description || formatTimeRange(dto.startsAt, dto.endsAt, dto.location),
+    countText: `사진·영상 ${totalCount}개`,
+    tiles,
+  };
+};
+
 export const MomentViewPage: React.FC = () => {
   const navigate = useNavigate();
+  const { eventId } = useParams<{ eventId: string }>();
+  const [sessions, setSessions] = useState<MomentSessionItem[]>(FALLBACK_MOMENT_SESSIONS);
+
+  // ==========================================================================
+  // 1. 백엔드 Moment 카드 목록 조회 (GET /api/v1/participant/{eventId}/moments)
+  // ==========================================================================
+  useEffect(() => {
+    if (!eventId || isNaN(Number(eventId))) return;
+
+    let isMounted = true;
+    const fetchMoments = async () => {
+      try {
+        const list = await getParticipantMoments(Number(eventId));
+        if (!isMounted) return;
+        // 서버에 등록된 Moment 카드가 1개 이상일 때만 실데이터로 교체, 비어있으면 시안 폴백 유지
+        if (list.length > 0) {
+          setSessions(list.map(mapDtoToMomentSession));
+        }
+      } catch (error) {
+        console.warn('[MomentViewPage] Moment API 미응답으로 기본 시안 데이터 유지:', error);
+      }
+    };
+
+    fetchMoments();
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId]);
 
   return (
     <PageContainer>
@@ -67,15 +143,15 @@ export const MomentViewPage: React.FC = () => {
         <HeaderTitle>Moment 카드</HeaderTitle>
       </TopHeader>
 
-      {/* 2. 상단 필터 칩 행: 세션별 | 카드 3개 */}
+      {/* 2. 상단 필터 칩 행: 세션별 | 카드 N개 */}
       <ChipRow>
         <Chip label="세션별" selected={true} />
-        <Chip label="카드 3개" selected={false} />
+        <Chip label={`카드 ${sessions.length}개`} selected={false} />
       </ChipRow>
 
       {/* 3. 세션별 Moment 카드 리스트 */}
       <CardList>
-        {MOMENT_SESSIONS.map((session) => (
+        {sessions.map((session) => (
           <SessionCard key={session.id}>
             <SessionTitle>{session.title}</SessionTitle>
             <SessionMeta>{session.meta}</SessionMeta>
@@ -83,6 +159,7 @@ export const MomentViewPage: React.FC = () => {
             <TileGrid3Col>
               {session.tiles.map((tile, idx) => (
                 <ThumbTile key={idx} $bgGradient={tile.gradient}>
+                  {tile.url && <img src={tile.url} alt={`${session.title} 미리보기 ${idx + 1}`} />}
                   {tile.isVideo && (
                     <VideoBadge>
                       <PlayTriangle />
@@ -106,7 +183,7 @@ export const MomentViewPage: React.FC = () => {
 };
 
 // ============================================================================
-// 스타일 정의 (Figma P-06 image_d2d125.jpg 100% 일치)
+// 스타일 정의
 // ============================================================================
 const PageContainer = styled.div`
   max-width: 480px;
@@ -189,6 +266,12 @@ const ThumbTile = styled.div<{ $bgGradient: string }>`
   background: ${({ $bgGradient }) => $bgGradient};
   position: relative;
   overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 `;
 
 const VideoBadge = styled.div`
@@ -202,6 +285,7 @@ const VideoBadge = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 2;
 `;
 
 const PlayTriangle = styled.span`

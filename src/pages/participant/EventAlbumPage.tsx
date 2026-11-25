@@ -1,15 +1,15 @@
 /**
  * @file EventAlbumPage.tsx
- * @description P-02 참가자 공유 앨범 페이지 (양끝 복제본 기반 무한 루프 슬라이드 적용)
+ * @description P-02 참가자 공유 앨범 페이지 (무한 루프 포토월 슬라이드 + 정렬 필터 + 상세 모달 좋아요 동기화)
+ * @note
+ * - GET /api/v1/participant/{eventId}/media?sort=LATEST|POPULAR 응답으로 포토월과 3열 그리드를 구성합니다.
+ * - PhotoDetailModal에서 발생한 좋아요 등록/취소 결과를 받아 목록 상태(photos)와 실시간 동기화합니다.
  */
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
-import {
-  getAlbumPhotos,
-  addPhotoReaction,
-} from '../../services/participantApi';
+import { getAlbumPhotos } from '../../services/participantApi';
 import type { AlbumPhoto } from '../../types/participant';
 import { PhotoDetailModal } from '../../components/participant/PhotoDetailModal';
 import {
@@ -42,20 +42,21 @@ const BANNER_SLIDE_GRADIENTS = [
   'linear-gradient(165deg, #22398c 0%, #1a2853 60%, #121526 100%)',
 ];
 
+type ExtendedAlbumPhoto = AlbumPhoto & { likedByMe?: boolean; mediaType?: string };
+
 export const EventAlbumPage: React.FC = () => {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
 
-  const [photos, setPhotos] = useState<AlbumPhoto[]>([]);
+  const [photos, setPhotos] = useState<ExtendedAlbumPhoto[]>([]);
   const [sort, setSort] = useState<'latest' | 'popular'>('latest');
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [selectedPhoto, setSelectedPhoto] = useState<AlbumPhoto | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<ExtendedAlbumPhoto | null>(null);
 
   /**
    * 무한 루프 슬라이드용 트랙 인덱스 (trackIndex)
    * 배열 구조: [5번 복제(idx:0), 1번(idx:1), 2번(idx:2), 3번(idx:3), 4번(idx:4), 5번(idx:5), 1번 복제(idx:6)]
-   * 따라서 시작 위치는 1번 슬라이드인 trackIndex = 1 입니다.
    */
   const [trackIndex, setTrackIndex] = useState(1);
   const [enableTransition, setEnableTransition] = useState(true);
@@ -68,6 +69,9 @@ export const EventAlbumPage: React.FC = () => {
 
   const currentNickname = sessionStorage.getItem('currentNickname') || '게스트';
 
+  // ==========================================================================
+  // 1. 공유 앨범 미디어 목록 조회 (정렬 탭 변경 시 재요청)
+  // ==========================================================================
   useEffect(() => {
     if (!eventId || isNaN(Number(eventId))) {
       setErrorMsg('유효하지 않은 행사 ID입니다.');
@@ -80,7 +84,7 @@ export const EventAlbumPage: React.FC = () => {
       setErrorMsg(null);
       try {
         const data = await getAlbumPhotos(Number(eventId), sort);
-        setPhotos(data || []);
+        setPhotos((data as ExtendedAlbumPhoto[]) || []);
       } catch (err: any) {
         setErrorMsg(
           err.response?.data?.message || '사진 목록을 불러오는 중 오류가 발생했습니다.'
@@ -93,7 +97,9 @@ export const EventAlbumPage: React.FC = () => {
     fetchPhotos();
   }, [eventId, sort]);
 
-  // 포토월 슬라이드용 상위 반응 사진 최대 5장
+  // ==========================================================================
+  // 2. 상단 포토월 무한 루프 슬라이드 계산 및 제스처 제어
+  // ==========================================================================
   const topPhotos = useMemo(() => {
     return [...photos]
       .sort((a, b) => {
@@ -106,7 +112,6 @@ export const EventAlbumPage: React.FC = () => {
 
   const slideCount = topPhotos.length;
 
-  // 앞뒤에 마지막 사진과 첫 번째 사진 복제본을 추가한 확장 배열 생성
   const extendedSlides = useMemo(() => {
     if (slideCount === 0) return [];
     if (slideCount === 1) return [{ photo: topPhotos[0], realIndex: 0 }];
@@ -118,7 +123,6 @@ export const EventAlbumPage: React.FC = () => {
     return [lastClone, ...middleItems, firstClone];
   }, [topPhotos, slideCount]);
 
-  // 현재 화면에 표시 중인 실제 사진 인덱스 (0 ~ slideCount-1)
   const activeRealIndex = useMemo(() => {
     if (slideCount <= 1) return 0;
     if (trackIndex === 0) return slideCount - 1;
@@ -126,7 +130,6 @@ export const EventAlbumPage: React.FC = () => {
     return trackIndex - 1;
   }, [trackIndex, slideCount]);
 
-  // 슬라이드 이동 함수
   const moveToTrackIndex = (nextIndex: number) => {
     if (slideCount <= 1 || isTransitioning) return;
     setIsTransitioning(true);
@@ -134,23 +137,19 @@ export const EventAlbumPage: React.FC = () => {
     setTrackIndex(nextIndex);
   };
 
-  // 복제본(0번 또는 slideCount+1번)에 도달했을 때 애니메이션이 끝난 직후 실제 위치로 순간 이동
   const handleTransitionEnd = () => {
     setIsTransitioning(false);
     if (slideCount <= 1) return;
 
     if (trackIndex === 0) {
-      // 맨 앞의 '5번 복제본'에 도착 -> 트랜지션 끄고 실제 5번(slideCount) 위치로 즉시 점프
       setEnableTransition(false);
       setTrackIndex(slideCount);
     } else if (trackIndex === slideCount + 1) {
-      // 맨 뒤의 '1번 복제본'에 도착 -> 트랜지션 끄고 실제 1번(1) 위치로 즉시 점프
       setEnableTransition(false);
       setTrackIndex(1);
     }
   };
 
-  // 4초 간격 자동 다음 슬라이드 이동 (5번 -> 1번 복제본으로 한 칸만 자연스럽게 전진)
   useEffect(() => {
     if (slideCount <= 1 || isDragging) return;
     const timer = setInterval(() => {
@@ -159,7 +158,6 @@ export const EventAlbumPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [slideCount, isDragging, trackIndex, isTransitioning]);
 
-  // 터치/마우스 드래그 시작
   const handleDragStart = (clientX: number) => {
     if (slideCount <= 1 || isTransitioning) return;
     startXRef.current = clientX;
@@ -168,7 +166,6 @@ export const EventAlbumPage: React.FC = () => {
     setEnableTransition(false);
   };
 
-  // 터치/마우스 이동 중
   const handleDragMove = (clientX: number) => {
     if (!isDragging || startXRef.current === null) return;
     const deltaX = clientX - startXRef.current;
@@ -178,7 +175,6 @@ export const EventAlbumPage: React.FC = () => {
     setDragOffset(deltaX);
   };
 
-  // 터치/마우스 종료
   const handleDragEnd = () => {
     if (!isDragging) return;
 
@@ -188,18 +184,15 @@ export const EventAlbumPage: React.FC = () => {
     startXRef.current = null;
 
     if (dragOffset < -threshold) {
-      // 왼쪽으로 밀기 -> 오른쪽 슬라이드(다음)로 한 칸 이동
       moveToTrackIndex(trackIndex + 1);
     } else if (dragOffset > threshold) {
-      // 오른쪽으로 밀기 -> 왼쪽 슬라이드(이전)로 한 칸 이동
       moveToTrackIndex(trackIndex - 1);
     } else {
-      // 제자리 복귀
       setEnableTransition(true);
     }
   };
 
-  const handleSlideClick = (photo: AlbumPhoto) => {
+  const handleSlideClick = (photo: ExtendedAlbumPhoto) => {
     if (movedRef.current) {
       movedRef.current = false;
       return;
@@ -207,28 +200,39 @@ export const EventAlbumPage: React.FC = () => {
     setSelectedPhoto(photo);
   };
 
-  const handleReactionToggle = async (photoId: string | number, emojiKey: string) => {
-    if (!eventId) return;
-    try {
-      await addPhotoReaction(Number(eventId), photoId);
-      setPhotos((prevPhotos) =>
-        prevPhotos.map((p) => {
-          if (String(p.id) === String(photoId)) {
-            const currentCount = p.reactions?.[emojiKey as keyof typeof p.reactions] || 0;
-            return {
-              ...p,
-              reactions: {
-                ...p.reactions,
-                [emojiKey]: currentCount + 1,
-              },
-            };
-          }
-          return p;
-        })
-      );
-    } catch (error) {
-      console.error('이모지 반응 처리 실패:', error);
-    }
+  // ==========================================================================
+  // 3. 상세 모달의 좋아요 변경 결과를 앨범 목록 상태에 동기화
+  // ==========================================================================
+  const handleReactionSync = (
+    photoId: string | number,
+    emojiKey: string,
+    serverState?: { likeCount: number; likedByMe: boolean }
+  ) => {
+    setPhotos((prevPhotos) =>
+      prevPhotos.map((p) => {
+        if (String(p.id) !== String(photoId)) return p;
+
+        if (serverState) {
+          return {
+            ...p,
+            likedByMe: serverState.likedByMe,
+            reactions: {
+              ...p.reactions,
+              heart: serverState.likeCount,
+            },
+          };
+        }
+
+        const currentCount = p.reactions?.[emojiKey as keyof typeof p.reactions] || 0;
+        return {
+          ...p,
+          reactions: {
+            ...p.reactions,
+            [emojiKey]: currentCount + 1,
+          },
+        };
+      })
+    );
   };
 
   return (
@@ -345,7 +349,7 @@ export const EventAlbumPage: React.FC = () => {
       ) : (
         <PhotoGrid3Col>
           {photos.map((photo, index) => {
-            const showVideoBadge = index === 1;
+            const showVideoBadge = photo.mediaType === 'VIDEO';
             return (
               <GridThumbCard
                 key={photo.id}
@@ -372,13 +376,14 @@ export const EventAlbumPage: React.FC = () => {
         승인된 사진만 노출 · 작성자는 설정된 닉네임 또는 익명으로 표기
       </BottomCaption>
 
-      {/* 사진 상세 모달 */}
+      {/* 7. 사진 상세 모달 (eventId 전달로 상세 조회 및 좋아요 API 활성화) */}
       {selectedPhoto && (
         <PhotoDetailModal
+          eventId={Number(eventId)}
           photo={selectedPhoto}
           allowDownload={true}
           onClose={() => setSelectedPhoto(null)}
-          onReactionToggle={(id, emoji) => handleReactionToggle(id, emoji)}
+          onReactionToggle={handleReactionSync}
         />
       )}
     </PageContainer>
