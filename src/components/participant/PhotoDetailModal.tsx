@@ -1,12 +1,14 @@
 /**
  * @file PhotoDetailModal.tsx
- * @description P-05 사진 상세 전체 화면 뷰어 (상세 조회 GET 및 좋아요 등록 PUT / 취소 DELETE 실서버 연동)
+ * @description P-05 사진 상세 전체 화면 뷰어 (상세 조회 GET, 1인 1반응 동기화, Blob 파일 다운로드)
  * @note
- * - 백엔드 1학기 스펙상 좋아요는 단일 카운트(likeCount, likedByMe)로 관리되므로 대표 반응('heart')에 실서버 API를 바인딩합니다.
- * - 나머지 3종 이모지('laugh', 'fire', 'clap')는 UI 상호작용을 유지하되 실서버 좋아요 카운트와 충돌하지 않도록 분리 처리합니다.
+ * - 백엔드 1학기 스펙은 단일 좋아요(likeCount, likedByMe)를 반환하므로,
+ *   전체 좋아요 수에서 본인 반응(1)과 타인 반응(likeCount - 1)을 분리 계산하여 4종 이모지 중복 카운트를 방지합니다.
+ * - 본인이 선택한 이모지 키는 localStorage에 저장하여 모달 재진입·새로고침 후에도 유지됩니다.
+ * - 사진 저장은 외부 S3 URL에서 새 탭 열림을 방지하기 위해 fetch -> Blob 변환 다운로드를 우선 시도합니다.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
 import { typography } from '../../styles/typography';
 import { AppBar, Avatar, Button, Icon, IconButton } from '../common';
@@ -17,6 +19,47 @@ import {
   removePhotoReaction,
 } from '../../services/participantApi';
 import { getPlaceholderGradient } from '../../styles/placeholder';
+
+type EmojiKey = 'heart' | 'laugh' | 'fire' | 'clap';
+
+const EMOJI_LIST: { key: EmojiKey; symbol: string }[] = [
+  { key: 'heart', symbol: '❤️' },
+  { key: 'laugh', symbol: '😂' },
+  { key: 'fire', symbol: '🔥' },
+  { key: 'clap', symbol: '👏' },
+];
+
+const isValidEmojiKey = (value: string | null): value is EmojiKey =>
+  value === 'heart' || value === 'laugh' || value === 'fire' || value === 'clap';
+
+const getReactionStorageKey = (eventId: number | undefined, mediaId: string | number) =>
+  `moment_reaction_${eventId ?? 'local'}_${mediaId}`;
+
+const loadSavedEmoji = (eventId: number | undefined, mediaId: string | number): EmojiKey | null => {
+  try {
+    const saved = localStorage.getItem(getReactionStorageKey(eventId, mediaId));
+    return isValidEmojiKey(saved) ? saved : null;
+  } catch {
+    return null;
+  }
+};
+
+const saveSelectedEmoji = (
+  eventId: number | undefined,
+  mediaId: string | number,
+  emoji: EmojiKey | null
+) => {
+  try {
+    const key = getReactionStorageKey(eventId, mediaId);
+    if (emoji) {
+      localStorage.setItem(key, emoji);
+    } else {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // 스토리지 접근 불가 환경 무시
+  }
+};
 
 interface PhotoDetailModalProps {
   eventId?: number;
@@ -37,46 +80,40 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
   onClose,
   onReactionToggle,
 }) => {
-  if (!photo) return null;
+  const [displayUrl, setDisplayUrl] = useState<string>(photo?.url || '');
+  const [downloadFileName, setDownloadFileName] = useState<string>(
+    photo ? `moment_${photo.id}.jpg` : 'moment_photo.jpg'
+  );
+  const [uploaderName, setUploaderName] = useState<string>(photo?.uploaderName || '익명 참가자');
+  const [capturedAt, setCapturedAt] = useState<string>(photo?.capturedAt || '');
 
-  const emojiList = [
-    { key: 'heart', symbol: '❤️' },
-    { key: 'laugh', symbol: '😂' },
-    { key: 'fire', symbol: '🔥' },
-    { key: 'clap', symbol: '👏' },
-  ];
-
-  const [displayUrl, setDisplayUrl] = useState<string>(photo.url || '');
-  const [uploaderName, setUploaderName] = useState<string>(photo.uploaderName || '익명 참가자');
-  const [capturedAt, setCapturedAt] = useState<string>(photo.capturedAt);
-
-  const [reactions, setReactions] = useState<{ [key: string]: number }>({
-    heart: photo.reactions?.heart || 0,
-    laugh: photo.reactions?.laugh || 0,
-    fire: photo.reactions?.fire || 0,
-    clap: photo.reactions?.clap || 0,
+  // 백엔드 단일 좋아요 기준 상태 (중복 카운트 원천 차단)
+  const [serverLikeCount, setServerLikeCount] = useState<number>(photo?.reactions?.heart || 0);
+  const [likedByMe, setLikedByMe] = useState<boolean>(Boolean(photo?.likedByMe));
+  const [userSelectedEmoji, setUserSelectedEmoji] = useState<EmojiKey | null>(() => {
+    if (!photo || !photo.likedByMe) return null;
+    return loadSavedEmoji(eventId, photo.id) || 'heart';
   });
 
-  // 서버에서 내려준 likedByMe 값이 true인 경우에만 초기 활성 상태로 지정
-  const [userSelectedEmoji, setUserSelectedEmoji] = useState<string | null>(
-    photo.likedByMe ? 'heart' : null
-  );
   const [isSubmittingLike, setIsSubmittingLike] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // ==========================================================================
   // 1. 모달 진입 시 백엔드 단건 상세 조회(GET .../media/{mediaId}) 호출
   // ==========================================================================
   useEffect(() => {
+    if (!photo) return;
+
+    const initialLiked = Boolean(photo.likedByMe);
+    const initialCount = Number(photo.reactions?.heart ?? 0);
+
     setDisplayUrl(photo.url || '');
+    setDownloadFileName(`moment_${photo.id}.jpg`);
     setUploaderName(photo.uploaderName || '익명 참가자');
     setCapturedAt(photo.capturedAt);
-    setReactions({
-      heart: photo.reactions?.heart || 0,
-      laugh: photo.reactions?.laugh || 0,
-      fire: photo.reactions?.fire || 0,
-      clap: photo.reactions?.clap || 0,
-    });
-    setUserSelectedEmoji(photo.likedByMe ? 'heart' : null);
+    setServerLikeCount(initialCount);
+    setLikedByMe(initialLiked);
+    setUserSelectedEmoji(initialLiked ? loadSavedEmoji(eventId, photo.id) || 'heart' : null);
 
     if (!eventId || !photo.id) return;
 
@@ -86,9 +123,11 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
         const detail = await getGalleryPhotoDetail(eventId, photo.id);
         if (!isMounted || !detail) return;
 
-        // 상세 API에서 원본 고화질 mediaUrl이 내려오면 우선 적용
         if (detail.mediaUrl || detail.thumbnailUrl) {
           setDisplayUrl(detail.mediaUrl || detail.thumbnailUrl || '');
+        }
+        if (detail.fileName) {
+          setDownloadFileName(detail.fileName);
         }
         if (detail.uploaderDisplayName) {
           setUploaderName(detail.uploaderDisplayName);
@@ -96,13 +135,19 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
         if (detail.capturedAt || detail.uploadedAt) {
           setCapturedAt(detail.capturedAt || detail.uploadedAt || photo.capturedAt);
         }
-        setReactions((prev) => ({
-          ...prev,
-          heart: Number(detail.likeCount ?? prev.heart),
-        }));
-        setUserSelectedEmoji(detail.likedByMe ? 'heart' : null);
+
+        const nextLiked = Boolean(detail.likedByMe);
+        const nextCount = Number(detail.likeCount ?? initialCount);
+        setServerLikeCount(nextCount);
+        setLikedByMe(nextLiked);
+
+        if (nextLiked) {
+          setUserSelectedEmoji(loadSavedEmoji(eventId, photo.id) || 'heart');
+        } else {
+          setUserSelectedEmoji(null);
+          saveSelectedEmoji(eventId, photo.id, null);
+        }
       } catch (error) {
-        // 상세 API 실패 시 목록에서 전달받은 기본 썸네일/메타 정보 유지
         console.warn('[PhotoDetailModal] 상세 조회 폴백 처리:', error);
       }
     };
@@ -113,50 +158,73 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
     };
   }, [eventId, photo]);
 
+  // 전체 좋아요 수에서 본인 몫(1)을 제외한 타인 좋아요 수와 각 이모지별 표시 카운트 계산
+  const displayedReactions = useMemo<Record<EmojiKey, number>>(() => {
+    const otherLikes = Math.max(0, serverLikeCount - (likedByMe ? 1 : 0));
+    return {
+      heart: otherLikes + (likedByMe && userSelectedEmoji === 'heart' ? 1 : 0),
+      laugh: likedByMe && userSelectedEmoji === 'laugh' ? 1 : 0,
+      fire: likedByMe && userSelectedEmoji === 'fire' ? 1 : 0,
+      clap: likedByMe && userSelectedEmoji === 'clap' ? 1 : 0,
+    };
+  }, [serverLikeCount, likedByMe, userSelectedEmoji]);
+
+  if (!photo) return null;
+
   // ==========================================================================
-  // 2. 반응(좋아요) 등록(PUT) 및 취소(DELETE) 핸들러
+  // 2. 반응(좋아요) 등록(PUT), 변경(PUT 멱등), 취소(DELETE) 핸들러
   // ==========================================================================
-  const handleEmojiClick = async (emojiKey: string) => {
+  const handleEmojiClick = async (emojiKey: EmojiKey) => {
     if (isSubmittingLike) return;
 
-    const isAlreadySelected = userSelectedEmoji === emojiKey;
-    const nextSelected = isAlreadySelected ? null : emojiKey;
+    const prevCount = serverLikeCount;
+    const prevLiked = likedByMe;
+    const prevEmoji = userSelectedEmoji;
 
-    // 낙관적 UI(Optimistic UI) 선반영
-    setReactions((prev) => {
-      const next = { ...prev };
-      if (userSelectedEmoji && next[userSelectedEmoji] > 0) {
-        next[userSelectedEmoji] -= 1;
-      }
-      if (!isAlreadySelected) {
-        next[emojiKey] = (next[emojiKey] || 0) + 1;
-      }
-      return next;
-    });
-    setUserSelectedEmoji(nextSelected);
+    const isCanceling = prevLiked && prevEmoji === emojiKey;
+    const nextLiked = !isCanceling;
+    const nextEmoji: EmojiKey | null = isCanceling ? null : emojiKey;
+    const nextCount = isCanceling
+      ? Math.max(0, prevCount - 1)
+      : prevLiked
+      ? prevCount
+      : prevCount + 1;
 
-    // eventId가 존재하면 백엔드 좋아요 API(PUT/DELETE) 호출 후 서버 카운트 동기화
+    // 화면 선반영
+    setServerLikeCount(nextCount);
+    setLikedByMe(nextLiked);
+    setUserSelectedEmoji(nextEmoji);
+    saveSelectedEmoji(eventId, photo.id, nextEmoji);
+
     if (eventId) {
       setIsSubmittingLike(true);
       try {
-        const res = isAlreadySelected
+        const res = isCanceling
           ? await removePhotoReaction(eventId, photo.id)
           : await addPhotoReaction(eventId, photo.id);
 
-        setReactions((prev) => ({
-          ...prev,
-          heart: Number(res.likeCount ?? prev.heart),
-        }));
-        setUserSelectedEmoji(res.likedByMe ? emojiKey : null);
+        const syncedLiked = Boolean(res.likedByMe);
+        const syncedCount = Number(res.likeCount ?? nextCount);
+        const syncedEmoji = syncedLiked ? nextEmoji || 'heart' : null;
+
+        setServerLikeCount(syncedCount);
+        setLikedByMe(syncedLiked);
+        setUserSelectedEmoji(syncedEmoji);
+        saveSelectedEmoji(eventId, photo.id, syncedEmoji);
 
         if (onReactionToggle) {
           onReactionToggle(photo.id, emojiKey, {
-            likeCount: Number(res.likeCount ?? 0),
-            likedByMe: Boolean(res.likedByMe),
+            likeCount: syncedCount,
+            likedByMe: syncedLiked,
           });
         }
       } catch (error) {
+        // 실패 시 이전 상태로 자동 복구
         console.error('[PhotoDetailModal] 좋아요 API 처리 실패:', error);
+        setServerLikeCount(prevCount);
+        setLikedByMe(prevLiked);
+        setUserSelectedEmoji(prevEmoji);
+        saveSelectedEmoji(eventId, photo.id, prevEmoji);
       } finally {
         setIsSubmittingLike(false);
       }
@@ -164,22 +232,44 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
     }
 
     if (onReactionToggle) {
-      onReactionToggle(photo.id, emojiKey);
+      onReactionToggle(photo.id, emojiKey, {
+        likeCount: nextCount,
+        likedByMe: nextLiked,
+      });
     }
   };
 
   // ==========================================================================
-  // 3. 원본 사진 다운로드 및 메타 일시 포맷팅
+  // 3. 원본 사진 파일 직접 다운로드 (Blob 변환 우선, CORS 차단 시 새 탭 폴백)
   // ==========================================================================
-  const handleDownload = () => {
-    if (!allowDownload || !displayUrl) return;
-    const link = document.createElement('a');
-    link.href = displayUrl;
-    link.download = `moment_${photo.id}.jpg`;
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownload = async () => {
+    if (!allowDownload || !displayUrl || isDownloading) return;
+
+    setIsDownloading(true);
+    try {
+      const response = await fetch(displayUrl, { mode: 'cors' });
+      if (!response.ok) {
+        throw new Error(`이미지 다운로드 실패 (HTTP ${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = downloadFileName || `moment_${photo.id}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // 브라우저가 다운로드를 시작할 시간을 확보한 뒤 메모리 해제
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (error) {
+      console.warn('[PhotoDetailModal] Blob 다운로드 실패(CORS 등), 새 탭 폴백 실행:', error);
+      window.open(displayUrl, '_blank', 'noopener,noreferrer');
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const formatMetaDate = (dateString: string) => {
@@ -222,9 +312,9 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
 
           {/* 4. 4열 세로형 반응 이모지 카드 그리드 */}
           <ReactionGrid4Col>
-            {emojiList.map((item) => {
-              const count = reactions[item.key] || 0;
-              const isActive = userSelectedEmoji === item.key;
+            {EMOJI_LIST.map((item) => {
+              const count = displayedReactions[item.key] || 0;
+              const isActive = likedByMe && userSelectedEmoji === item.key;
               return (
                 <ReactionCard
                   key={item.key}
@@ -248,11 +338,12 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
               <Button
                 $variant="primary"
                 $size="large"
+                disabled={isDownloading || !displayUrl}
                 onClick={handleDownload}
                 style={{ width: '100%' }}
               >
                 <Icon icon="DownloadSimple" $size={18} />
-                <span>사진 저장</span>
+                <span>{isDownloading ? '저장 중...' : '사진 저장'}</span>
               </Button>
             )}
             <DownloadPolicyText>
