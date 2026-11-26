@@ -17,6 +17,14 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 // 백엔드 응답 DTO 타입 정의
 // ============================================================================
 
+export interface ParticipantProfileDto {
+  sessionId: number;
+  eventId: number;
+  displayName: string;
+  role: 'PARTICIPANT' | string;
+  expiresAt: string;
+}
+
 export interface GalleryItemDto {
   mediaId: number;
   mediaType: 'IMAGE' | 'VIDEO' | string;
@@ -143,7 +151,7 @@ const extractArrayPayload = <T>(payload: unknown): T[] => {
 };
 
 // ============================================================================
-// P-01: 행사 입장 및 참가자 세션 API
+// P-01: 행사 입장, 참가자 세션 및 프로필(닉네임) API
 // ============================================================================
 
 /**
@@ -170,9 +178,6 @@ export const createDevEvent = async (): Promise<{ eventId: number; accessKey: st
 /**
  * [P-01] 공유 키(X-Event-Access-Key)로 공개 행사 기본 정보를 조회합니다.
  * @endpoint GET /api/v1/events/access
- * @note
- * - 새 행사 링크로 진입할 때마다 sessionStorage의 currentShareKey를 최신 키로 동기화합니다.
- * - 개발 환경에서 만료/미등록 키로 403 반환 시 dev 이벤트를 자동 발급하여 재시도합니다.
  */
 export const getPublicEventInfo = async (shareKey: string): Promise<PublicEventInfo> => {
   if (!shareKey) {
@@ -194,7 +199,6 @@ export const getPublicEventInfo = async (shareKey: string): Promise<PublicEventI
     });
     const result = response.data?.data ?? response.data;
     if (result && typeof result === 'object' && 'eventId' in result) {
-      // 새 공유 링크로 진입할 때마다 이전 행사의 잔존 키를 덮어쓰기
       sessionStorage.setItem('currentShareKey', cleanKey);
       return result as PublicEventInfo;
     }
@@ -222,7 +226,6 @@ export const getPublicEventInfo = async (shareKey: string): Promise<PublicEventI
 /**
  * [P-01] 참가자 세션을 발급하고 브라우저에 HttpOnly 쿠키(participant_token)를 저장합니다.
  * @endpoint POST /api/v1/participant/{eventId}/session
- * @note 이전 행사 키 잔존으로 인한 403 오류를 방지하기 위해 전달받은 shareKey를 최우선으로 사용합니다.
  */
 export const postJoinSession = async (
   eventId: number,
@@ -271,6 +274,52 @@ export const getParticipantSession = async (eventId: number): Promise<Participan
   }
 };
 
+/**
+ * [P-01 프로필] 현재 참가자 세션의 닉네임 및 역할 정보를 조회합니다.
+ * @endpoint GET /api/v1/participant/{eventId}/me
+ */
+export const getParticipantMe = async (eventId: number): Promise<ParticipantProfileDto | null> => {
+  if (USE_MOCK) {
+    return {
+      sessionId: 2,
+      eventId,
+      displayName: sessionStorage.getItem('currentNickname') || '반짝이는 수달',
+      role: 'PARTICIPANT',
+      expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+    };
+  }
+  try {
+    const response = await api.get(`/api/v1/participant/${eventId}/me`);
+    return (response.data?.data ?? response.data) as ParticipantProfileDto;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * [P-01 프로필] 현재 참가자의 닉네임을 서버에 저장/변경합니다.
+ * @endpoint PATCH /api/v1/participant/{eventId}/me
+ * @note 백엔드 규칙: 앞뒤 공백 제거 후 2~20자, 동일 행사 내 중복 불가(현재 닉네임과 동일하면 성공)
+ */
+export const updateParticipantNickname = async (
+  eventId: number,
+  displayName: string
+): Promise<{ displayName: string }> => {
+  const trimmed = displayName.trim();
+  if (USE_MOCK) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return { displayName: trimmed };
+  }
+
+  const response = await api.patch(`/api/v1/participant/${eventId}/me`, {
+    displayName: trimmed,
+  });
+  const data = response.data?.data ?? response.data;
+  return {
+    displayName: data?.displayName || trimmed,
+  };
+};
+
 // ============================================================================
 // P-02 & P-05: 공유 앨범 목록, 사진 상세 및 좋아요 API
 // ============================================================================
@@ -278,7 +327,6 @@ export const getParticipantSession = async (eventId: number): Promise<Participan
 /**
  * [P-02] 주최자 공개 승인된 공유 앨범 미디어 목록을 조회합니다.
  * @endpoint GET /api/v1/participant/{eventId}/media?sort=LATEST|POPULAR&page=0&limit=20
- * @note 주최자 미승인 미디어는 백엔드 정책에 의해 응답 목록에서 제외됩니다.
  */
 export const getAlbumPhotos = async (
   eventId: number,

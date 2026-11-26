@@ -1,15 +1,20 @@
 /**
  * @file EventAlbumPage.tsx
- * @description P-02 참가자 공유 앨범 페이지 (무한 루프 포토월 슬라이드 + 정렬 필터 + 상세 모달 좋아요 동기화)
+ * @description P-02 참가자 공유 앨범 페이지 (무한 루프 포토월 슬라이드 + 정렬 필터 + 상세 모달 좋아요 동기화 + 닉네임 변경)
  * @note
  * - GET /api/v1/participant/{eventId}/media?sort=LATEST|POPULAR 응답으로 포토월과 3열 그리드를 구성합니다.
  * - PhotoDetailModal에서 발생한 좋아요 등록/취소 결과를 받아 목록 상태(photos)와 실시간 동기화합니다.
+ * - 우측 상단 닉네임 배지 클릭 시 PATCH /api/v1/participant/{eventId}/me 로 닉네임을 변경하고 앨범 목록을 갱신합니다.
  */
 
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
-import { getAlbumPhotos } from '../../services/participantApi';
+import {
+  getAlbumPhotos,
+  getParticipantMe,
+  updateParticipantNickname,
+} from '../../services/participantApi';
 import type { AlbumPhoto } from '../../types/participant';
 import { PhotoDetailModal } from '../../components/participant/PhotoDetailModal';
 import {
@@ -18,6 +23,8 @@ import {
   Icon,
   LiveIndicator,
   EmptyState,
+  Modal,
+  TextField,
 } from '../../components/common';
 import { typography } from '../../styles/typography';
 
@@ -54,6 +61,15 @@ export const EventAlbumPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<ExtendedAlbumPhoto | null>(null);
 
+  // 참가자 닉네임 및 변경 모달 상태
+  const [currentNickname, setCurrentNickname] = useState<string>(
+    () => sessionStorage.getItem('currentNickname') || '게스트'
+  );
+  const [isNicknameModalOpen, setIsNicknameModalOpen] = useState(false);
+  const [nicknameInput, setNicknameInput] = useState('');
+  const [nicknameError, setNicknameError] = useState<string | null>(null);
+  const [isUpdatingNickname, setIsUpdatingNickname] = useState(false);
+
   /**
    * 무한 루프 슬라이드용 트랙 인덱스 (trackIndex)
    * 배열 구조: [5번 복제(idx:0), 1번(idx:1), 2번(idx:2), 3번(idx:3), 4번(idx:4), 5번(idx:5), 1번 복제(idx:6)]
@@ -67,20 +83,34 @@ export const EventAlbumPage: React.FC = () => {
   const startXRef = useRef<number | null>(null);
   const movedRef = useRef<boolean>(false);
 
-  const currentNickname = sessionStorage.getItem('currentNickname') || '게스트';
-
   // ==========================================================================
-  // 1. 공유 앨범 미디어 목록 조회 (정렬 탭 변경 시 재요청)
+  // 1. 서버 내 참가자 프로필(닉네임) 및 공유 앨범 미디어 목록 조회
   // ==========================================================================
   useEffect(() => {
-    if (!eventId || isNaN(Number(eventId))) {
-      setErrorMsg('유효하지 않은 행사 ID입니다.');
-      setLoading(false);
-      return;
-    }
+    if (!eventId || isNaN(Number(eventId))) return;
 
-    const fetchPhotos = async () => {
-      setLoading(true);
+    let isMounted = true;
+    getParticipantMe(Number(eventId)).then((profile) => {
+      if (!isMounted || !profile?.displayName) return;
+      setCurrentNickname(profile.displayName);
+      sessionStorage.setItem('currentNickname', profile.displayName);
+      localStorage.setItem('participantNickname', profile.displayName);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId]);
+
+  const fetchPhotos = useCallback(
+    async (showLoader = true) => {
+      if (!eventId || isNaN(Number(eventId))) {
+        setErrorMsg('유효하지 않은 행사 ID입니다.');
+        setLoading(false);
+        return;
+      }
+
+      if (showLoader) setLoading(true);
       setErrorMsg(null);
       try {
         const data = await getAlbumPhotos(Number(eventId), sort);
@@ -90,15 +120,72 @@ export const EventAlbumPage: React.FC = () => {
           err.response?.data?.message || '사진 목록을 불러오는 중 오류가 발생했습니다.'
         );
       } finally {
-        setLoading(false);
+        if (showLoader) setLoading(false);
       }
-    };
+    },
+    [eventId, sort]
+  );
 
-    fetchPhotos();
-  }, [eventId, sort]);
+  useEffect(() => {
+    fetchPhotos(true);
+  }, [fetchPhotos]);
 
   // ==========================================================================
-  // 2. 상단 포토월 무한 루프 슬라이드 계산 및 제스처 제어
+  // 2. 닉네임 변경 모달 열기 및 서버 저장 핸들러 (PATCH /me)
+  // ==========================================================================
+  const handleOpenNicknameModal = () => {
+    setNicknameInput(currentNickname === '게스트' ? '' : currentNickname);
+    setNicknameError(null);
+    setIsNicknameModalOpen(true);
+  };
+
+  const handleNicknameSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!eventId || isNaN(Number(eventId)) || isUpdatingNickname) return;
+
+    const trimmed = nicknameInput.trim();
+    if (trimmed.length < 2 || trimmed.length > 20) {
+      setNicknameError('닉네임은 앞뒤 공백을 제외하고 2~20자로 입력해 주세요.');
+      return;
+    }
+
+    // 기존 닉네임과 동일하면 불필요한 재조회 없이 즉시 닫기
+    if (trimmed === currentNickname) {
+      setIsNicknameModalOpen(false);
+      return;
+    }
+
+    setIsUpdatingNickname(true);
+    setNicknameError(null);
+
+    try {
+      const updated = await updateParticipantNickname(Number(eventId), trimmed);
+      const nextName = updated.displayName || trimmed;
+
+      setCurrentNickname(nextName);
+      sessionStorage.setItem('currentNickname', nextName);
+      localStorage.setItem('participantNickname', nextName);
+      setIsNicknameModalOpen(false);
+
+      // 기존에 업로드한 사진의 작성자 닉네임도 즉시 반영되도록 목록 재조회
+      await fetchPhotos(false);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const serverMsg = err?.response?.data?.message;
+      if (status === 409 || status === 400) {
+        setNicknameError(
+          serverMsg || '이미 사용 중인 닉네임이에요. 다른 닉네임을 입력해 주세요.'
+        );
+      } else {
+        setNicknameError('닉네임 변경 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      }
+    } finally {
+      setIsUpdatingNickname(false);
+    }
+  };
+
+  // ==========================================================================
+  // 3. 상단 포토월 무한 루프 슬라이드 계산 및 제스처 제어
   // ==========================================================================
   const topPhotos = useMemo(() => {
     return [...photos]
@@ -201,7 +288,7 @@ export const EventAlbumPage: React.FC = () => {
   };
 
   // ==========================================================================
-  // 3. 상세 모달의 좋아요 변경 결과를 앨범 목록 상태에 동기화
+  // 4. 상세 모달의 좋아요 변경 결과를 앨범 목록 상태에 동기화
   // ==========================================================================
   const handleReactionSync = (
     photoId: string | number,
@@ -237,13 +324,27 @@ export const EventAlbumPage: React.FC = () => {
 
   return (
     <PageContainer>
-      {/* 1. 상단 헤더 */}
+      {/* 1. 상단 헤더 (우측 닉네임 배지 클릭 시 변경 모달 오픈) */}
       <TopHeaderRow>
         <EventTitle>2026 가을 워크숍</EventTitle>
-        <GuestBadge>
+        <GuestBadgeButton
+          type="button"
+          onClick={handleOpenNicknameModal}
+          aria-label="닉네임 변경"
+          title="클릭하여 닉네임 변경"
+        >
           <Icon icon="User" $size={13} $color="text2" />
-          <span>{currentNickname}</span>
-        </GuestBadge>
+          <NicknameText>{currentNickname}</NicknameText>
+          <EditPencilIcon viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M11.333 2.00004C11.5081 1.82494 11.716 1.68605 11.9447 1.59129C12.1735 1.49653 12.4187 1.44775 12.6663 1.44775C12.914 1.44775 13.1592 1.49653 13.3879 1.59129C13.6167 1.68605 13.8246 1.82494 13.9997 2.00004C14.1748 2.17513 14.3137 2.383 14.4084 2.61178C14.5032 2.84055 14.552 3.08575 14.552 3.33337C14.552 3.58099 14.5032 3.82619 14.4084 4.05497C14.3137 4.28374 14.1748 4.49161 13.9997 4.66671L4.99967 13.6667L1.33301 14.6667L2.33301 11L11.333 2.00004Z"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </EditPencilIcon>
+        </GuestBadgeButton>
       </TopHeaderRow>
 
       {/* 2. 상단 실시간 포토월 무한 루프 슬라이드 뷰포트 */}
@@ -386,6 +487,54 @@ export const EventAlbumPage: React.FC = () => {
           onReactionToggle={handleReactionSync}
         />
       )}
+
+      {/* 8. 참가자 닉네임 변경 모달 */}
+      <Modal
+        isOpen={isNicknameModalOpen}
+        title="닉네임 변경"
+        onClose={() => !isUpdatingNickname && setIsNicknameModalOpen(false)}
+      >
+        <NicknameForm onSubmit={handleNicknameSubmit}>
+          <ModalDesc>
+            공유 앨범과 업로드한 사진에 표시될 닉네임을 변경할 수 있어요.
+          </ModalDesc>
+          <TextField
+            placeholder="새 닉네임 입력 (2~20자)"
+            value={nicknameInput}
+            onChange={(e) => {
+              setNicknameInput(e.target.value);
+              if (nicknameError) setNicknameError(null);
+            }}
+            maxLength={20}
+          />
+          {nicknameError ? (
+            <ModalErrorText>{nicknameError}</ModalErrorText>
+          ) : (
+            <ModalGuideText>앞뒤 공백 제외 2~20자 · 행사 내 중복 닉네임 불가</ModalGuideText>
+          )}
+          <ModalButtonRow>
+            <Button
+              type="button"
+              $variant="secondary"
+              $size="medium"
+              disabled={isUpdatingNickname}
+              onClick={() => setIsNicknameModalOpen(false)}
+              style={{ flex: 1 }}
+            >
+              취소
+            </Button>
+            <Button
+              type="submit"
+              $variant="primary"
+              $size="medium"
+              disabled={isUpdatingNickname}
+              style={{ flex: 1 }}
+            >
+              {isUpdatingNickname ? '변경 중...' : '변경하기'}
+            </Button>
+          </ModalButtonRow>
+        </NicknameForm>
+      </Modal>
     </PageContainer>
   );
 };
@@ -407,6 +556,7 @@ const TopHeaderRow = styled.header`
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 16px;
 `;
 
@@ -416,16 +566,37 @@ const EventTitle = styled.h1`
   margin: 0;
 `;
 
-const GuestBadge = styled.div`
+const GuestBadgeButton = styled.button`
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-width: 160px;
   padding: 6px 12px;
   border-radius: 20px;
   background-color: ${({ theme }) => theme.colors.surface};
   border: 1px solid ${({ theme }) => theme.colors.border};
   ${typography.caption}
   color: ${({ theme }) => theme.colors.text2};
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+
+  &:hover {
+    border-color: ${({ theme }) => theme.colors.accentLine};
+    color: ${({ theme }) => theme.colors.text};
+  }
+`;
+
+const NicknameText = styled.span`
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const EditPencilIcon = styled.svg`
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.75;
 `;
 
 const PhotowallViewport = styled.div`
@@ -624,4 +795,34 @@ const BottomCaption = styled.p`
   color: ${({ theme }) => theme.colors.text3};
   text-align: left;
   margin-top: 16px;
+`;
+
+const NicknameForm = styled.form`
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+`;
+
+const ModalDesc = styled.p`
+  ${typography.caption}
+  color: ${({ theme }) => theme.colors.text2};
+  margin: 0 0 12px 0;
+  line-height: 1.5;
+`;
+
+const ModalGuideText = styled.p`
+  ${typography.micro}
+  color: ${({ theme }) => theme.colors.text3};
+  margin: 8px 0 16px 0;
+`;
+
+const ModalErrorText = styled.p`
+  ${typography.micro}
+  color: #f87171;
+  margin: 8px 0 16px 0;
+`;
+
+const ModalButtonRow = styled.div`
+  display: flex;
+  gap: 8px;
 `;
