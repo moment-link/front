@@ -1,6 +1,10 @@
 /**
  * @file EventJoinPage.tsx
  * @description P-01 QR 접속 및 참가자 세션 발급·닉네임 서버 동기화(PATCH /me) 페이지
+ * @note
+ * - 새 행사(shareKey) 진입 시 이전 행사에서 사용하던 상태 및 로컬/세션 스토리지 캐시(세션, 닉네임, 행사명)를 전면 초기화합니다.
+ * - GET /api/v1/events/access 로 조회한 실제 행사명을 표시하고 sessionStorage에 저장해 공유 앨범과 동기화합니다.
+ * - 세션 발급(POST /session) 직후 입력된 닉네임(또는 랜덤 배정 닉네임)을 서버(PATCH /me)에 동기화합니다.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -44,34 +48,65 @@ export const EventJoinPage: React.FC = () => {
   const [infoLoading, setInfoLoading] = useState(true);
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
 
-  // 입장 화면 진입 시 과거 구버전 닉네임 캐시 초기화
+  // ==========================================================================
+  // 1. 새 행사 진입 시 이전 행사의 상태 및 세션·닉네임·행사명 캐시 전면 리셋
+  // ==========================================================================
   useEffect(() => {
-    if (sessionStorage.getItem('currentNickname') === '김홍익') {
+    const cleanKey = shareKey.trim();
+    const prevKey = sessionStorage.getItem('currentShareKey');
+
+    // 다른 행사 링크로 진입했거나 구버전('김홍익') 캐시가 남아있는 경우 모두 초기화
+    if (
+      prevKey !== cleanKey ||
+      sessionStorage.getItem('currentNickname') === '김홍익' ||
+      localStorage.getItem('participantNickname') === '김홍익'
+    ) {
+      sessionStorage.removeItem('currentSessionId');
+      sessionStorage.removeItem('currentEventId');
+      sessionStorage.removeItem('currentEventName');
       sessionStorage.removeItem('currentNickname');
-    }
-    if (localStorage.getItem('participantNickname') === '김홍익') {
       localStorage.removeItem('participantNickname');
     }
-  }, []);
 
+    sessionStorage.setItem('currentShareKey', cleanKey);
+    setEventInfo(null);
+    setNickname('');
+    setNicknameError(null);
+  }, [shareKey]);
+
+  // ==========================================================================
+  // 2. 공유 키(shareKey) 기반 공개 행사 기본 정보 조회
+  // ==========================================================================
   useEffect(() => {
     if (!shareKey) return;
 
+    let isMounted = true;
     setInfoLoading(true);
     getPublicEventInfo(shareKey)
       .then((data) => {
+        if (!isMounted) return;
         setEventInfo(data);
+        if (data?.eventId) {
+          sessionStorage.setItem('currentEventId', String(data.eventId));
+        }
+        if (data?.name) {
+          sessionStorage.setItem('currentEventName', data.name);
+        }
       })
       .catch((err) => {
         console.error('행사 정보 로드 실패:', err);
       })
       .finally(() => {
-        setInfoLoading(false);
+        if (isMounted) setInfoLoading(false);
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, [shareKey]);
 
   const formatDateRange = (startsAt?: string, endsAt?: string) => {
-    if (!startsAt || !endsAt) return '10.02 09:00 ~ 10.03 18:00';
+    if (!startsAt || !endsAt) return '행사 일정 확인 중';
     const start = new Date(startsAt);
     const end = new Date(endsAt);
 
@@ -95,6 +130,12 @@ export const EventJoinPage: React.FC = () => {
     if (nicknameError) setNicknameError(null);
   };
 
+  const displayEventName =
+    eventInfo?.name || (infoLoading ? '행사 정보 불러오는 중...' : '초대받은 행사');
+
+  // ==========================================================================
+  // 3. 참가자 세션 발급 및 서버 닉네임 동기화(PATCH /me)
+  // ==========================================================================
   const handleJoin = async () => {
     if (!shareKey) {
       alert('유효한 공유 키가 존재하지 않습니다.');
@@ -123,7 +164,7 @@ export const EventJoinPage: React.FC = () => {
         return;
       }
 
-      // 1. 입력한 닉네임이 없으면 랜덤 닉네임 배정 후 서버(PATCH /me)에 동기화
+      // 입력한 닉네임이 없으면 랜덤 닉네임 배정 후 서버(PATCH /me)에 동기화
       let assignedNickname = isCustomInput ? trimmedInput : generateRandomNickname(false);
 
       try {
@@ -134,7 +175,7 @@ export const EventJoinPage: React.FC = () => {
         const serverMsg = patchError?.response?.data?.message;
 
         if (!isCustomInput && (status === 409 || status === 400)) {
-          // 랜덤 닉네임이 행사 내 중복된 경우 숫자 접미사를 붙여 1회 재시도
+          // 랜덤 닉네임이 중복된 경우 숫자 접미사를 붙여 1회 재시도
           const fallbackRandom = generateRandomNickname(true);
           try {
             const retryUpdated = await updateParticipantNickname(targetEventId, fallbackRandom);
@@ -142,10 +183,16 @@ export const EventJoinPage: React.FC = () => {
           } catch (retryErr) {
             console.warn('[EventJoinPage] 랜덤 닉네임 재시도 실패:', retryErr);
           }
-        } else if (isCustomInput && (status === 409 || status === 400)) {
-          // 사용자가 직접 입력한 닉네임이 중복이거나 형식 오류인 경우 안내 후 중단
+        } else if (isCustomInput && status === 409) {
+          // 동일 행사 내 닉네임 중복(409 Conflict) 안내 후 중단
           setNicknameError(
-            serverMsg || '이미 사용 중인 닉네임이에요. 다른 닉네임을 입력해 주세요.'
+            serverMsg || '현재 행사에서 이미 사용 중인 닉네임이에요. 다른 닉네임을 입력해 주세요.'
+          );
+          return;
+        } else if (isCustomInput && status === 400) {
+          // 입력 형식 또는 행사 상태 오류(400 Bad Request) 안내 후 중단
+          setNicknameError(
+            serverMsg || '닉네임 형식이 올바르지 않거나 변경할 수 없는 상태입니다.'
           );
           return;
         } else {
@@ -153,9 +200,11 @@ export const EventJoinPage: React.FC = () => {
         }
       }
 
-      // 2. 확정된 세션 및 닉네임 저장 후 앨범 페이지 이동
+      // 확정된 새 행사의 세션, 행사명, 닉네임 저장 후 공유 앨범 페이지로 이동
+      const resolvedEventName = eventInfo?.name || '공유 앨범';
       sessionStorage.setItem('currentSessionId', String(session?.sessionId || ''));
       sessionStorage.setItem('currentEventId', String(targetEventId));
+      sessionStorage.setItem('currentEventName', resolvedEventName);
       sessionStorage.setItem('currentShareKey', shareKey.trim());
       sessionStorage.setItem('currentNickname', assignedNickname);
       localStorage.setItem('participantNickname', assignedNickname);
@@ -171,14 +220,9 @@ export const EventJoinPage: React.FC = () => {
     }
   };
 
-  const displayEventName =
-    !eventInfo?.name || eventInfo.name === '참가자 개발용 테스트 행사'
-      ? '2026 가을 워크숍'
-      : eventInfo.name;
-
   return (
     <PageContainer>
-      {/* 1. 상단 행사 헤더 정보 */}
+      {/* 1. 상단 행사 헤더 정보 (실서버 조회 행사명 표출) */}
       <HeaderSection>
         <SubTitle>초대받은 행사</SubTitle>
         <EventTitle>{displayEventName}</EventTitle>
@@ -189,20 +233,19 @@ export const EventJoinPage: React.FC = () => {
         </DateRow>
       </HeaderSection>
 
-      {/* 2. 실시간 포토월 미리보기 카드 */}
+      {/* 2. 실시간 포토월 미리보기 카드 (더미 메타 텍스트 제거) */}
       <PhotoWallCard>
         <PhotoWallBadge>
           <LiveIndicator />
           <span>실시간 포토월</span>
         </PhotoWallBadge>
-        <PhotoWallFooter>익명 참가자 · 반응 21</PhotoWallFooter>
       </PhotoWallCard>
 
-      {/* 3. 닉네임 입력 섹션 */}
+      {/* 3. 닉네임 입력 섹션 (placeholder 비움) */}
       <InputSection>
         <InputLabel>닉네임</InputLabel>
         <TextField
-          placeholder="반짝이는 수달"
+          placeholder=""
           value={nickname}
           onChange={handleNicknameChange}
           maxLength={20}
@@ -337,7 +380,7 @@ const PhotoWallCard = styled.div`
   padding: 16px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   margin-bottom: 24px;
 `;
 
@@ -352,12 +395,6 @@ const PhotoWallBadge = styled.div`
   color: ${({ theme }) => theme.colors.text};
   ${typography.caption}
   width: fit-content;
-`;
-
-const PhotoWallFooter = styled.p`
-  ${typography.body}
-  color: ${({ theme }) => theme.colors.text};
-  margin: 0;
 `;
 
 const InputSection = styled.div`
