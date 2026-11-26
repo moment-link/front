@@ -1,4 +1,3 @@
-
 # Moment Link Frontend
 
 행사 사진·영상 수집 및 공유 서비스 **Moment Link**의 프론트엔드 저장소입니다.
@@ -7,8 +6,8 @@
 
 ## Domains & Service URLs
 
-- **Frontend Domain**: `[https://momentlink.org](https://momentlink.org)`
-- **Backend API Domain**: `[https://api.momentlink.org](https://api.momentlink.org)`
+- **Frontend Domain**: `https://momentlink.org`
+- **Backend API Domain**: `https://api.momentlink.org`
 
 ## Tech Stack
 
@@ -25,13 +24,14 @@
 ## Features
 
 ### Participant
-- QR 코드 및 공유 링크 기반 무설치(No-App) 접속 및 랜덤 닉네임 자동 배정 (`participant_token` 세션 쿠키 발급)
+- QR 코드 및 공유 링크 기반 무설치(No-App) 접속 및 HttpOnly 세션 쿠키(`participant_token`) 발급
+- 참가자 닉네임 설정(2~20자 직접 입력 또는 랜덤 자동 배정), 서버 프로필 동기화 및 공유 앨범 내 닉네임 변경 모달 지원
 - 인앱 카메라 뷰파인더(3×3 격자, 사진 촬영·동영상 녹화 통합) 및 스마트폰 기본 카메라 전환(Two-Track) 지원
 - 촬영본 및 업로드 대기열 썸네일 미리보기·개별 삭제 모달 지원
-- Presigned URL 기반 S3 직전송 및 파일별 실시간 업로드 진행률 확인
+- Presigned URL 기반 S3 직전송(SHA-256 무결성 검증) 및 파일별 실시간 업로드 진행률 확인
 - 승인된 사진 공유 앨범 조회 및 무한 루프 터치 스와이프 실시간 포토월 연동
-- 4종 이모지 반응(❤️, 😂, 🔥, 👏) 등록 및 최신순/인기순 정렬 확인
-- 주최자 허용 시 원본 사진 다운로드 및 2단계 초상권·개인정보(EXIF) 법적 고지 안내
+- 사진 상세 뷰어 조회 및 1인 1반응 4종 이모지(❤️, 😂, 🔥, 👏) 토글·취소, 최신순/인기순 정렬 확인
+- 주최자 허용 시 Blob 변환 기반 원본 사진 다운로드 및 초상권·개인정보(EXIF) 법적 고지 모달 안내
 - 시간대별/구역별 사진 묶음(Moment 카드) 조회 및 행사 종료 후 결과 아카이브 열람
 
 ### Host
@@ -51,7 +51,7 @@
 - **카메라 제어 및 미디어 녹화 API**
   - **인앱 뷰파인더**: `navigator.mediaDevices.getUserMedia` (FHD 스틸 캡처) 및 `MediaRecorder` (실시간 동영상 녹화)
   - **네이티브 카메라 연동**: `<input type="file" capture="environment" />` 기반 스마트폰 순정 카메라 즉시 전환 지원
-- **로컬 모바일 테스트 환경**: `@vitejs/plugin-basic-ssl`을 통해 로컬 네트워크(`[https://192.168.](https://192.168.)x.x:5173`)에서도 모바일 브라우저 카메라 권한 활성화 지원
+- **로컬 모바일 테스트 환경**: `@vitejs/plugin-basic-ssl`을 통해 로컬 네트워크(`https://192.168.x.x:5173`)에서도 모바일 브라우저 카메라 권한 활성화 지원
 - **Fallback 처리**: 카메라 미지원 환경 또는 권한 거절 시 기기 기본 카메라/파일 선택(앨범) 화면으로 자동 전환
 
 ## Project Structure
@@ -81,7 +81,7 @@ src/
 ### 1. Clone
 
 ```bash
-git clone https://github.com/moment-link/front.git
+git clone [https://github.com/moment-link/front.git](https://github.com/moment-link/front.git)
 cd front
 
 ```
@@ -95,7 +95,7 @@ npm install
 
 ### 3. Environment Setup (`.env.development`)
 
-프로젝트 루트의 `.env.development` 파일에서 실서버 연동 여부를 제어할 수 있습니다. (Vite Proxy를 통해 `/api` 요청이 `[https://api.momentlink.org](https://api.momentlink.org)`로 전달됩니다.)
+프로젝트 루트의 `.env.development` (또는 `.env.development.local`) 파일에서 실서버 연동 여부를 제어할 수 있습니다. (Vite Proxy를 통해 `/api` 요청이 `https://api.momentlink.org`로 전달됩니다.)
 
 ```env
 VITE_USE_MOCK=false
@@ -114,7 +114,7 @@ npm run dev
 
 ```text
 Local:   https://localhost:5173
-Network: https://192.168.x.x:5173
+Network: [https://192.168.](https://192.168.)x.x:5173
 
 ```
 
@@ -144,6 +144,7 @@ fix/*                        # 버그 수정
 feature/participant-album-feed
 feature/participant-api-integration
 feature/participant-camera-upload
+fix/participant-nickname-reaction
 feature/host-login
 feature/host-dashboard
 
@@ -174,20 +175,23 @@ feature/host-dashboard
 
 | Area | Scope |
 | --- | --- |
-| Participant Frontend | QR 입장·세션 발급, 인앱 카메라·업로드, 공유 앨범, 리액션, Moment 카드, 아카이브 페이지 |
+| Participant Frontend | QR 입장·세션 발급, 닉네임 동기화·변경, 인앱 카메라·업로드, 공유 앨범, 리액션, 사진 저장, Moment 카드, 아카이브 페이지 |
 | Host Frontend | OAuth 로그인, 행사 관리, 사진 승인·관리, 실시간 포토월, Moment 카드 설정, 권한 관리 |
 
 ```
 
 ---
 
-### 💡 `README.md` 반영 명령어
+### 3. GitHub 반영 명령어
 
-1. 만약 방금 PR을 아직 `Merge`하기 전이라면 현재 브랜치(`feature/participant-album-feed`)에서, 이미 `Merge`하셨다면 `git checkout main` $\rightarrow$ `git pull origin main` 후에 `README.md`를 저장하시고 아래 명령어를 입력하시면 됩니다:
+두 PR(`#10` 및 `fix/participant-nickname-reaction`)을 `main`에 병합하신 뒤, VS Code 터미널에서 최신 `main` 브랜치를 기준으로 `README.md`를 업데이트해 주십시오.
 
 ```powershell
+git checkout main
+git pull origin main
+# README.md 저장 후 실행
 git add README.md
-git commit -m "docs: 참가자 파트 실서버 연동 및 모바일 HTTPS 카메라 스펙 README 현행화"
-git push
+git commit -m "docs: README 링크 깨짐 수정 및 참가자 파트 최신 구현 사항 반영"
+git push origin main
 
 ```
