@@ -1,23 +1,37 @@
 /**
  * @file PhotoDetailModal.tsx
- * @description 사진 상세 전체 화면 뷰어 (공통 컴포넌트 AppBar, IconButton, Avatar, Button 적용)
+ * @description P-05 사진 상세 전체 화면 뷰어 (상세 조회 GET 및 좋아요 등록 PUT / 취소 DELETE 실서버 연동)
+ * @note
+ * - 백엔드 1학기 스펙상 좋아요는 단일 카운트(likeCount, likedByMe)로 관리되므로 대표 반응('heart')에 실서버 API를 바인딩합니다.
+ * - 나머지 3종 이모지('laugh', 'fire', 'clap')는 UI 상호작용을 유지하되 실서버 좋아요 카운트와 충돌하지 않도록 분리 처리합니다.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { typography } from '../../styles/typography';
 import { AppBar, Avatar, Button, Icon, IconButton } from '../common';
 import type { AlbumPhoto } from '../../types/participant';
+import {
+  getGalleryPhotoDetail,
+  addPhotoReaction,
+  removePhotoReaction,
+} from '../../services/participantApi';
 import { getPlaceholderGradient } from '../../styles/placeholder';
 
 interface PhotoDetailModalProps {
-  photo: AlbumPhoto | null;
+  eventId?: number;
+  photo: (AlbumPhoto & { likedByMe?: boolean }) | null;
   allowDownload?: boolean;
   onClose: () => void;
-  onReactionToggle?: (photoId: string | number, emoji: string) => void;
+  onReactionToggle?: (
+    photoId: string | number,
+    emoji: string,
+    serverState?: { likeCount: number; likedByMe: boolean }
+  ) => void;
 }
 
 export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
+  eventId,
   photo,
   allowDownload = true,
   onClose,
@@ -32,6 +46,10 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
     { key: 'clap', symbol: '👏' },
   ];
 
+  const [displayUrl, setDisplayUrl] = useState<string>(photo.url || '');
+  const [uploaderName, setUploaderName] = useState<string>(photo.uploaderName || '익명 참가자');
+  const [capturedAt, setCapturedAt] = useState<string>(photo.capturedAt);
+
   const [reactions, setReactions] = useState<{ [key: string]: number }>({
     heart: photo.reactions?.heart || 0,
     laugh: photo.reactions?.laugh || 0,
@@ -39,37 +57,126 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
     clap: photo.reactions?.clap || 0,
   });
 
-  const [userSelectedEmoji, setUserSelectedEmoji] = useState<string | null>('heart');
+  // 서버에서 내려준 likedByMe 값이 true인 경우에만 초기 활성 상태로 지정
+  const [userSelectedEmoji, setUserSelectedEmoji] = useState<string | null>(
+    photo.likedByMe ? 'heart' : null
+  );
+  const [isSubmittingLike, setIsSubmittingLike] = useState(false);
 
-  const handleEmojiClick = (emojiKey: string) => {
+  // ==========================================================================
+  // 1. 모달 진입 시 백엔드 단건 상세 조회(GET .../media/{mediaId}) 호출
+  // ==========================================================================
+  useEffect(() => {
+    setDisplayUrl(photo.url || '');
+    setUploaderName(photo.uploaderName || '익명 참가자');
+    setCapturedAt(photo.capturedAt);
+    setReactions({
+      heart: photo.reactions?.heart || 0,
+      laugh: photo.reactions?.laugh || 0,
+      fire: photo.reactions?.fire || 0,
+      clap: photo.reactions?.clap || 0,
+    });
+    setUserSelectedEmoji(photo.likedByMe ? 'heart' : null);
+
+    if (!eventId || !photo.id) return;
+
+    let isMounted = true;
+    const fetchDetail = async () => {
+      try {
+        const detail = await getGalleryPhotoDetail(eventId, photo.id);
+        if (!isMounted || !detail) return;
+
+        // 상세 API에서 원본 고화질 mediaUrl이 내려오면 우선 적용
+        if (detail.mediaUrl || detail.thumbnailUrl) {
+          setDisplayUrl(detail.mediaUrl || detail.thumbnailUrl || '');
+        }
+        if (detail.uploaderDisplayName) {
+          setUploaderName(detail.uploaderDisplayName);
+        }
+        if (detail.capturedAt || detail.uploadedAt) {
+          setCapturedAt(detail.capturedAt || detail.uploadedAt || photo.capturedAt);
+        }
+        setReactions((prev) => ({
+          ...prev,
+          heart: Number(detail.likeCount ?? prev.heart),
+        }));
+        setUserSelectedEmoji(detail.likedByMe ? 'heart' : null);
+      } catch (error) {
+        // 상세 API 실패 시 목록에서 전달받은 기본 썸네일/메타 정보 유지
+        console.warn('[PhotoDetailModal] 상세 조회 폴백 처리:', error);
+      }
+    };
+
+    fetchDetail();
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId, photo]);
+
+  // ==========================================================================
+  // 2. 반응(좋아요) 등록(PUT) 및 취소(DELETE) 핸들러
+  // ==========================================================================
+  const handleEmojiClick = async (emojiKey: string) => {
+    if (isSubmittingLike) return;
+
+    const isAlreadySelected = userSelectedEmoji === emojiKey;
+    const nextSelected = isAlreadySelected ? null : emojiKey;
+
+    // 낙관적 UI(Optimistic UI) 선반영
     setReactions((prev) => {
-      const isSelected = userSelectedEmoji === emojiKey;
       const next = { ...prev };
-
       if (userSelectedEmoji && next[userSelectedEmoji] > 0) {
         next[userSelectedEmoji] -= 1;
       }
-
-      if (!isSelected) {
+      if (!isAlreadySelected) {
         next[emojiKey] = (next[emojiKey] || 0) + 1;
-        setUserSelectedEmoji(emojiKey);
-      } else {
-        setUserSelectedEmoji(null);
       }
-
       return next;
     });
+    setUserSelectedEmoji(nextSelected);
+
+    // eventId가 존재하면 백엔드 좋아요 API(PUT/DELETE) 호출 후 서버 카운트 동기화
+    if (eventId) {
+      setIsSubmittingLike(true);
+      try {
+        const res = isAlreadySelected
+          ? await removePhotoReaction(eventId, photo.id)
+          : await addPhotoReaction(eventId, photo.id);
+
+        setReactions((prev) => ({
+          ...prev,
+          heart: Number(res.likeCount ?? prev.heart),
+        }));
+        setUserSelectedEmoji(res.likedByMe ? emojiKey : null);
+
+        if (onReactionToggle) {
+          onReactionToggle(photo.id, emojiKey, {
+            likeCount: Number(res.likeCount ?? 0),
+            likedByMe: Boolean(res.likedByMe),
+          });
+        }
+      } catch (error) {
+        console.error('[PhotoDetailModal] 좋아요 API 처리 실패:', error);
+      } finally {
+        setIsSubmittingLike(false);
+      }
+      return;
+    }
 
     if (onReactionToggle) {
       onReactionToggle(photo.id, emojiKey);
     }
   };
 
+  // ==========================================================================
+  // 3. 원본 사진 다운로드 및 메타 일시 포맷팅
+  // ==========================================================================
   const handleDownload = () => {
-    if (!allowDownload) return;
+    if (!allowDownload || !displayUrl) return;
     const link = document.createElement('a');
-    link.href = photo.url;
+    link.href = displayUrl;
     link.download = `moment_${photo.id}.jpg`;
+    link.target = '_blank';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -77,11 +184,12 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
 
   const formatMetaDate = (dateString: string) => {
     const d = new Date(dateString);
+    if (isNaN(d.getTime())) return '행사 진행 중';
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     const hh = String(d.getHours()).padStart(2, '0');
     const min = String(d.getMinutes()).padStart(2, '0');
-    return `${mm}.${dd} ${hh}:${min} · 1부 · 개회식`;
+    return `${mm}.${dd} ${hh}:${min}`;
   };
 
   return (
@@ -100,15 +208,15 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
         <BodyContent>
           {/* 2. 정사각형 고화질 사진 뷰어 */}
           <PhotoFrame $bgGradient={getPlaceholderGradient(0)}>
-            {photo.url && <img src={photo.url} alt="상세 사진" />}
+            {displayUrl && <img src={displayUrl} alt="상세 사진" />}
           </PhotoFrame>
 
-          {/* 3. 공통 Avatar 컴포넌트 + 업로더 닉네임 + 일시/세션명 */}
+          {/* 3. 공통 Avatar 컴포넌트 + 업로더 닉네임 + 촬영 일시 */}
           <UploaderRow>
-            <Avatar name={photo.uploaderName || '민'} />
+            <Avatar name={uploaderName} />
             <UploaderMeta>
-              <UploaderName>{photo.uploaderName || '민지'}</UploaderName>
-              <SubInfo>{formatMetaDate(photo.capturedAt)}</SubInfo>
+              <UploaderName>{uploaderName}</UploaderName>
+              <SubInfo>{formatMetaDate(capturedAt)}</SubInfo>
             </UploaderMeta>
           </UploaderRow>
 
@@ -122,6 +230,7 @@ export const PhotoDetailModal: React.FC<PhotoDetailModalProps> = ({
                   key={item.key}
                   type="button"
                   $active={isActive}
+                  disabled={isSubmittingLike}
                   onClick={() => handleEmojiClick(item.key)}
                 >
                   <EmojiIcon>{item.symbol}</EmojiIcon>

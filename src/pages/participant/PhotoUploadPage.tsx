@@ -24,10 +24,6 @@ const MOMENT_TAGS = ['A팀 · 축구장', 'B팀 · 강당', 'C팀 · 식당'];
 const NATIVE_PHOTO_INPUT_ID = 'native-photo-camera-input';
 const NATIVE_VIDEO_INPUT_ID = 'native-video-camera-input';
 
-/**
- * 모바일 기본 카메라(iOS HEIC/MOV, Android 빈 MIME 등)에서 넘어온 파일이
- * 업로드 대기열 검증기(fileValidation)에서 탈락하지 않도록 표준 MIME 타입으로 보정합니다.
- */
 const normalizeCapturedFiles = (rawFiles: File[]): File[] => {
   return rawFiles.map((file) => {
     const lowerName = file.name.toLowerCase();
@@ -49,7 +45,6 @@ const normalizeCapturedFiles = (rawFiles: File[]): File[] => {
       });
     }
 
-    // 사진 파일 (image/heic, image/heif 또는 빈 type 등) -> image/jpeg 표준화
     if (file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp') {
       return file;
     }
@@ -63,9 +58,8 @@ const normalizeCapturedFiles = (rawFiles: File[]): File[] => {
 };
 
 export const PhotoUploadPage: React.FC = () => {
-  const { eventId, shareKey } = useParams<{ eventId?: string; shareKey?: string }>();
+  const { eventId } = useParams<{ eventId?: string }>();
   const targetEventId = eventId || sessionStorage.getItem('currentEventId') || '42';
-  const activeShareKey = shareKey || sessionStorage.getItem('currentShareKey') || 'default_key';
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -82,15 +76,9 @@ export const PhotoUploadPage: React.FC = () => {
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState<boolean>(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
-  const participantSessionId =
-    sessionStorage.getItem('currentSessionId') ||
-    localStorage.getItem('participantSessionId') ||
-    'temp_session_123';
-
   const camera = useCamera();
   const { queue, isUploading, addToQueue, removeFromQueue, startUpload } = useS3Upload(
-    activeShareKey,
-    participantSessionId
+    targetEventId
   );
 
   const handleOpenCamera = async () => {
@@ -104,7 +92,7 @@ export const PhotoUploadPage: React.FC = () => {
 
   useEffect(() => {
     if (searchParams.get('mode') === 'camera') {
-      handleOpenCamera();
+      void handleOpenCamera();
     }
   }, []);
 
@@ -143,10 +131,6 @@ export const PhotoUploadPage: React.FC = () => {
     setIsCameraMode(false);
   };
 
-  /**
-   * [핵심] 기본 카메라 호출 직전에는 WebRTC 카메라 렌즈 점유만 해제하고,
-   * setIsCameraMode(false)로 화면을 닫지 않습니다! (화면이 유지되어야 OS 카메라 응답이 유실되지 않음)
-   */
   const handleBeforeOpenNativeCamera = () => {
     camera.stopCamera();
   };
@@ -165,19 +149,14 @@ export const PhotoUploadPage: React.FC = () => {
     }
   };
 
-  /**
-   * 기본 카메라(사진/동영상) 촬영 후 [확인]을 눌렀을 때 실행되는 핸들러
-   */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFiles = e.target.files ? Array.from(e.target.files) : [];
     if (rawFiles.length > 0) {
       const validFiles = normalizeCapturedFiles(rawFiles);
       addToQueue(validFiles);
     }
-    // 같은 파일을 연속 촬영할 수 있도록 value 초기화
     e.target.value = '';
 
-    // 촬영이 완료되어 파일이 들어온 시점에 카메라 화면을 닫고 사진 업로드 화면으로 전환합니다!
     camera.stopCamera();
     if (searchParams.get('mode') === 'camera') {
       searchParams.delete('mode');
@@ -210,7 +189,6 @@ export const PhotoUploadPage: React.FC = () => {
 
   return (
     <>
-      {/* 1. 갤러리 다중 파일 선택용 input */}
       <VisuallyHiddenInput
         ref={fileInputRef}
         type="file"
@@ -219,7 +197,6 @@ export const PhotoUploadPage: React.FC = () => {
         onChange={handleFileChange}
       />
 
-      {/* 2. 스마트폰 기본 카메라 (사진 촬영) 직행 input */}
       <VisuallyHiddenInput
         id={NATIVE_PHOTO_INPUT_ID}
         ref={nativePhotoInputRef}
@@ -229,7 +206,6 @@ export const PhotoUploadPage: React.FC = () => {
         onChange={handleFileChange}
       />
 
-      {/* 3. 스마트폰 기본 카메라 (동영상 촬영) 직행 input */}
       <VisuallyHiddenInput
         id={NATIVE_VIDEO_INPUT_ID}
         ref={nativeVideoInputRef}
@@ -248,6 +224,7 @@ export const PhotoUploadPage: React.FC = () => {
           recordingSeconds={camera.recordingSeconds}
           nativePhotoInputId={NATIVE_PHOTO_INPUT_ID}
           nativeVideoInputId={NATIVE_VIDEO_INPUT_ID}
+          onStartCamera={camera.startCamera}
           onBeforeOpenNativeCamera={handleBeforeOpenNativeCamera}
           onRemoveItem={removeFromQueue}
           onClose={handleCloseCamera}
@@ -258,7 +235,6 @@ export const PhotoUploadPage: React.FC = () => {
         />
       ) : (
         <PageContainer>
-          {/* 1. 상단 AppBar */}
           <AppBar
             title="사진 업로드"
             leftAction={
@@ -272,12 +248,10 @@ export const PhotoUploadPage: React.FC = () => {
           />
 
           <ContentArea>
-            {/* 2. 선택한 파일 N개 */}
             <SectionHeader>
               <SectionLabel>선택한 파일 {queue.length}개</SectionLabel>
             </SectionHeader>
 
-            {/* 3. 3열 정사각형 썸네일 그리드 */}
             <ThumbGrid3Col>
               {queue.map((item, idx) => {
                 const isVideo = item.file.type.startsWith('video/');
@@ -321,7 +295,6 @@ export const PhotoUploadPage: React.FC = () => {
               </EmptyAddBox>
             </ThumbGrid3Col>
 
-            {/* 4. 파일별 전송/검증 상태 및 ProgressBar 리스트 */}
             {queue.length > 0 && (
               <ProgressListCard>
                 {queue.map((item) => {
@@ -329,7 +302,7 @@ export const PhotoUploadPage: React.FC = () => {
                   if (item.status === 'uploading') statusText = `전송 ${item.progress}%`;
                   else if (item.status === 'verifying') statusText = '검증 중…';
                   else if (item.status === 'completed') statusText = '업로드 완료';
-                  else if (item.status === 'failed') statusText = '실패';
+                  else if (item.status === 'failed') statusText = item.error || '실패';
 
                   return (
                     <ProgressRow key={item.id}>
@@ -350,7 +323,6 @@ export const PhotoUploadPage: React.FC = () => {
               </ProgressListCard>
             )}
 
-            {/* 5. Moment 카드 태그 선택 섹션 */}
             <TagSection>
               <SectionLabel>Moment 카드 태그 선택</SectionLabel>
               <TagChipRow>
@@ -368,7 +340,6 @@ export const PhotoUploadPage: React.FC = () => {
               </TagHelperText>
             </TagSection>
 
-            {/* 6. 2차 법적 고지 카드 */}
             <LegalNoticeCard>
               <NoticeTitle>
                 <Icon icon="CheckCircle" $size={16} $color="accent" />
@@ -390,7 +361,6 @@ export const PhotoUploadPage: React.FC = () => {
             </LegalNoticeCard>
           </ContentArea>
 
-          {/* 7. 최하단 2분할 버튼 */}
           <BottomButtonGrid>
             <Button
               $variant="secondary"
@@ -410,7 +380,6 @@ export const PhotoUploadPage: React.FC = () => {
             </Button>
           </BottomButtonGrid>
 
-          {/* 8. 썸네일 클릭 시 사진을 크게 보고 삭제할 수 있는 미리보기 팝업 */}
           {currentPreviewItem && previewIndex !== null && (
             <PreviewModalOverlay onClick={() => setPreviewIndex(null)}>
               <PreviewModalCard onClick={(e) => e.stopPropagation()}>
@@ -474,7 +443,6 @@ export const PhotoUploadPage: React.FC = () => {
             </PreviewModalOverlay>
           )}
 
-          {/* 9. 업로드 완료 소형 팝업 (Modal) */}
           <Modal
             isOpen={isSuccessModalOpen}
             title="업로드 완료"
@@ -502,11 +470,6 @@ export const PhotoUploadPage: React.FC = () => {
   );
 };
 
-// ============================================================================
-// 스타일 정의
-// ============================================================================
-
-/* 모바일 Safari/Chrome에서 display:none 시 파일 콜백이 무시되는 현상을 막기 위한 표준 시각적 숨김 처리 */
 const VisuallyHiddenInput = styled.input`
   position: fixed;
   top: -9999px;
