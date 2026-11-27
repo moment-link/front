@@ -1,10 +1,13 @@
 /**
  * @file EventAlbumPage.tsx
- * @description P-02 참가자 공유 앨범 페이지 (무한 루프 포토월 슬라이드 + 정렬 필터 + 상세 모달 좋아요 동기화 + 닉네임 변경)
+ * @description P-02 참가자 공유 앨범 페이지 (행사명 실시간 동기화 + 무한 루프 포토월 슬라이드 + 정렬 필터 + 상세 모달 좋아요 동기화 + 닉네임 변경)
  * @note
- * - GET /api/v1/participant/{eventId}/media?sort=LATEST|POPULAR 응답으로 포토월과 3열 그리드를 구성합니다.
- * - PhotoDetailModal에서 발생한 좋아요 등록/취소 결과를 받아 목록 상태(photos)와 실시간 동기화합니다.
- * - 우측 상단 닉네임 배지 클릭 시 PATCH /api/v1/participant/{eventId}/me 로 닉네임을 변경하고 앨범 목록을 갱신합니다.
+ * - 상단 행사명(eventName)은 입장 시 저장된 sessionStorage 및 GET /api/v1/events/access 응답과 동기화되어 입장 화면과 동일한 행사명을 표시합니다.
+ * - 상단 실시간 포토월(photowallPhotos)과 하단 3열 그리드(photos) 상태를 분리하여,
+ *   정렬 탭(최신순/인기순) 전환 시 상단 포토월이 불필요하게 재로딩되지 않도록 구성했습니다.
+ * - 실시간 포토월은 주최자 공개 승인(APPROVED)된 사진 중 반응 수 상위 최대 5장을 노출합니다.
+ * - PhotoDetailModal에서 발생한 좋아요 등록/취소 결과를 받아 목록 및 포토월 상태와 실시간 동기화합니다.
+ * - 우측 상단 닉네임 배지 클릭 시 PATCH /api/v1/participant/{eventId}/me 로 닉네임을 변경하고 목록을 갱신합니다.
  */
 
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
@@ -13,6 +16,7 @@ import styled from 'styled-components';
 import {
   getAlbumPhotos,
   getParticipantMe,
+  getPublicEventInfo,
   updateParticipantNickname,
 } from '../../services/participantApi';
 import type { AlbumPhoto } from '../../types/participant';
@@ -55,7 +59,21 @@ export const EventAlbumPage: React.FC = () => {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
 
+  // 입장 화면(EventJoinPage)과 동일한 실제 행사명 상태
+  const [eventName, setEventName] = useState<string>(() => {
+    const savedEventId = sessionStorage.getItem('currentEventId');
+    const savedEventName = sessionStorage.getItem('currentEventName');
+    if (savedEventId === eventId && savedEventName) {
+      return savedEventName;
+    }
+    return '공유 앨범';
+  });
+
+  // 하단 3열 그리드 전용 사진 목록 상태 (sort 탭 전환에 반응)
   const [photos, setPhotos] = useState<ExtendedAlbumPhoto[]>([]);
+  // 상단 실시간 포토월 전용 사진 목록 상태 (sort 탭 전환과 독립 유지)
+  const [photowallPhotos, setPhotowallPhotos] = useState<ExtendedAlbumPhoto[]>([]);
+
   const [sort, setSort] = useState<'latest' | 'popular'>('latest');
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -84,13 +102,40 @@ export const EventAlbumPage: React.FC = () => {
   const movedRef = useRef<boolean>(false);
 
   // ==========================================================================
-  // 1. 서버 내 참가자 프로필(닉네임) 및 공유 앨범 미디어 목록 조회
+  // 1. 현재 행사명(GET /events/access) 및 내 참가자 프로필(GET /me) 동기화
   // ==========================================================================
   useEffect(() => {
     if (!eventId || isNaN(Number(eventId))) return;
 
     let isMounted = true;
-    getParticipantMe(Number(eventId)).then((profile) => {
+    const numericEventId = Number(eventId);
+
+    // 같은 SPA 세션 내에서 eventId가 변경된 경우 저장된 행사명 즉시 선반영
+    const savedEventId = sessionStorage.getItem('currentEventId');
+    const savedEventName = sessionStorage.getItem('currentEventName');
+    if (savedEventId === eventId && savedEventName) {
+      setEventName(savedEventName);
+    }
+
+    // 1-1. 저장된 shareKey로 실제 행사명 최신화 (eventId 일치 검증)
+    const savedShareKey = sessionStorage.getItem('currentShareKey');
+    if (savedShareKey) {
+      getPublicEventInfo(savedShareKey)
+        .then((info) => {
+          if (!isMounted || !info) return;
+          if (Number(info.eventId) === numericEventId && info.name) {
+            setEventName(info.name);
+            sessionStorage.setItem('currentEventId', String(numericEventId));
+            sessionStorage.setItem('currentEventName', info.name);
+          }
+        })
+        .catch(() => {
+          // shareKey 조회 실패 시 sessionStorage에 보존된 eventName 유지
+        });
+    }
+
+    // 1-2. 현재 세션의 서버 닉네임 동기화
+    getParticipantMe(numericEventId).then((profile) => {
       if (!isMounted || !profile?.displayName) return;
       setCurrentNickname(profile.displayName);
       sessionStorage.setItem('currentNickname', profile.displayName);
@@ -102,6 +147,34 @@ export const EventAlbumPage: React.FC = () => {
     };
   }, [eventId]);
 
+  // ==========================================================================
+  // 2. 상단 실시간 포토월 데이터 독립 조회 (eventId 변경 시에만 실행, 정렬 탭 무관)
+  // ==========================================================================
+  const fetchPhotowallPhotos = useCallback(async () => {
+    if (!eventId || isNaN(Number(eventId))) return;
+
+    try {
+      const data = await getAlbumPhotos(Number(eventId), 'popular', 0, 10);
+      const sortedTop = [...((data as ExtendedAlbumPhoto[]) || [])]
+        .sort((a, b) => {
+          const sumA = Object.values(a.reactions || {}).reduce((acc, cur) => acc + cur, 0);
+          const sumB = Object.values(b.reactions || {}).reduce((acc, cur) => acc + cur, 0);
+          return sumB - sumA;
+        })
+        .slice(0, 5);
+      setPhotowallPhotos(sortedTop);
+    } catch (err) {
+      console.warn('[EventAlbumPage] 실시간 포토월 조회 경고:', err);
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    fetchPhotowallPhotos();
+  }, [fetchPhotowallPhotos]);
+
+  // ==========================================================================
+  // 3. 하단 공유 앨범 3열 그리드 조회 (정렬 탭 전환 시 그리드만 재조회)
+  // ==========================================================================
   const fetchPhotos = useCallback(
     async (showLoader = true) => {
       if (!eventId || isNaN(Number(eventId))) {
@@ -131,7 +204,7 @@ export const EventAlbumPage: React.FC = () => {
   }, [fetchPhotos]);
 
   // ==========================================================================
-  // 2. 닉네임 변경 모달 열기 및 서버 저장 핸들러 (PATCH /me)
+  // 4. 닉네임 변경 모달 열기 및 서버 저장 핸들러 (PATCH /me)
   // ==========================================================================
   const handleOpenNicknameModal = () => {
     setNicknameInput(currentNickname === '게스트' ? '' : currentNickname);
@@ -167,14 +240,18 @@ export const EventAlbumPage: React.FC = () => {
       localStorage.setItem('participantNickname', nextName);
       setIsNicknameModalOpen(false);
 
-      // 기존에 업로드한 사진의 작성자 닉네임도 즉시 반영되도록 목록 재조회
-      await fetchPhotos(false);
+      // 기존에 업로드한 사진의 작성자 닉네임도 즉시 반영되도록 그리드 및 포토월 무음 재조회
+      await Promise.all([fetchPhotos(false), fetchPhotowallPhotos()]);
     } catch (err: any) {
       const status = err?.response?.status;
       const serverMsg = err?.response?.data?.message;
-      if (status === 409 || status === 400) {
+      if (status === 409) {
         setNicknameError(
-          serverMsg || '이미 사용 중인 닉네임이에요. 다른 닉네임을 입력해 주세요.'
+          serverMsg || '현재 행사에서 이미 사용 중인 닉네임이에요. 다른 닉네임을 입력해 주세요.'
+        );
+      } else if (status === 400) {
+        setNicknameError(
+          serverMsg || '닉네임 형식이 올바르지 않거나 변경할 수 없는 상태입니다.'
         );
       } else {
         setNicknameError('닉네임 변경 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
@@ -185,18 +262,9 @@ export const EventAlbumPage: React.FC = () => {
   };
 
   // ==========================================================================
-  // 3. 상단 포토월 무한 루프 슬라이드 계산 및 제스처 제어
+  // 5. 상단 포토월 무한 루프 슬라이드 계산 및 제스처 제어
   // ==========================================================================
-  const topPhotos = useMemo(() => {
-    return [...photos]
-      .sort((a, b) => {
-        const sumA = Object.values(a.reactions || {}).reduce((acc, cur) => acc + cur, 0);
-        const sumB = Object.values(b.reactions || {}).reduce((acc, cur) => acc + cur, 0);
-        return sumB - sumA;
-      })
-      .slice(0, 5);
-  }, [photos]);
-
+  const topPhotos = photowallPhotos;
   const slideCount = topPhotos.length;
 
   const extendedSlides = useMemo(() => {
@@ -288,15 +356,15 @@ export const EventAlbumPage: React.FC = () => {
   };
 
   // ==========================================================================
-  // 4. 상세 모달의 좋아요 변경 결과를 앨범 목록 상태에 동기화
+  // 6. 상세 모달의 좋아요 변경 결과를 하단 그리드와 상단 포토월에 동시 반영
   // ==========================================================================
   const handleReactionSync = (
     photoId: string | number,
     emojiKey: string,
     serverState?: { likeCount: number; likedByMe: boolean }
   ) => {
-    setPhotos((prevPhotos) =>
-      prevPhotos.map((p) => {
+    const applyUpdate = (list: ExtendedAlbumPhoto[]) =>
+      list.map((p) => {
         if (String(p.id) !== String(photoId)) return p;
 
         if (serverState) {
@@ -318,15 +386,17 @@ export const EventAlbumPage: React.FC = () => {
             [emojiKey]: currentCount + 1,
           },
         };
-      })
-    );
+      });
+
+    setPhotos(applyUpdate);
+    setPhotowallPhotos(applyUpdate);
   };
 
   return (
     <PageContainer>
-      {/* 1. 상단 헤더 (우측 닉네임 배지 클릭 시 변경 모달 오픈) */}
+      {/* 1. 상단 헤더 (실제 행사명 표출 + 우측 닉네임 배지 클릭 시 변경 모달 오픈) */}
       <TopHeaderRow>
-        <EventTitle>2026 가을 워크숍</EventTitle>
+        <EventTitle>{eventName}</EventTitle>
         <GuestBadgeButton
           type="button"
           onClick={handleOpenNicknameModal}
@@ -564,6 +634,9 @@ const EventTitle = styled.h1`
   ${typography.page}
   color: ${({ theme }) => theme.colors.text};
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `;
 
 const GuestBadgeButton = styled.button`
@@ -571,6 +644,7 @@ const GuestBadgeButton = styled.button`
   align-items: center;
   gap: 6px;
   max-width: 160px;
+  flex-shrink: 0;
   padding: 6px 12px;
   border-radius: 20px;
   background-color: ${({ theme }) => theme.colors.surface};
